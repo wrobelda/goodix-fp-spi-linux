@@ -55,6 +55,89 @@ applications in that platform's firmware can be reached through it. The SM8250
 this was developed against is such a platform: it exposes both, and
 [`gfenu`](02-ta-protocol.md#the-application) answers only on QSEECOM.
 
+## What the rest of the kernel had to grow
+
+The TEE driver is new code, but it does not stand alone. Two files already in
+the tree hold pieces it needs, and neither had the shape required.
+
+### Image assembly — `drivers/soc/qcom/mdt_loader.c`
+
+`qcom_mdt_load()` answers the remoteproc question: take an mdt and its segments
+and scatter each one to its `p_paddr` inside a carveout. QSEE's application
+loader wants the opposite — the `.mdt` followed by the segment payloads in
+program-header order, as one contiguous buffer described by an mdt length and a
+total length.
+
+For some images the program headers cannot be treated as a file layout at all.
+In the Qualcomm-signed application here, segment 0 declares `p_offset` 0, which
+overlaps the ELF and program headers being parsed, and two later segments
+declare the same `p_offset` with different sizes
+([[our device]](../README.md#how-we-know)). Concatenation in program-header
+order is what the vendor's own loader does and what the secure world accepts.
+
+So two functions were added rather than a second parser grown elsewhere:
+`qcom_mdt_get_image_size()` to size the buffer and `qcom_mdt_read_image()` to
+fill it, both reusing the existing split-image handling. No existing caller
+changes behaviour.
+
+`QCOM_MDT_LOADER` also gained a Kconfig prompt. It had none because every
+existing user selects it. This driver cannot: selecting `QCOM_SCM`, which it
+already depends on, would close a dependency cycle, so a prompt is the only way
+left to ask for the loader.
+
+### Loading and listeners — `drivers/firmware/qcom/qcom_scm.c`
+
+The SCM layer already knew how to look up a loaded application and send it a
+command, which is all an in-kernel client such as `uefisecapp` needs. Two things
+were missing before an application could be driven at all.
+
+**Loading.** `qcom_scm_qseecom_app_load()` hands TZ an MDT-described image at a
+physically contiguous, suitably aligned address and gets back the application
+id. TZ keeps the name it was loaded under, which is what a later lookup matches.
+
+**Listener services.** An application asks the normal world to do work on its
+behalf — [file I/O](03-listener-services.md) above all — by raising a listener
+request, and it stays blocked until one is answered. That meant registering a
+listener with its shared buffer, servicing what TZ reports, and answering with
+one of `enum qcom_scm_qseecom_listener_status`.
+
+### Unloading, which did not exist
+
+TZ refuses to load an application that is already resident, and nothing released
+one, so re-initialising meant a reboot. That matters more than it sounds: an
+application asks the normal world for its stored state during a first
+initialisation and never again, so anything that changes what it is served
+cannot be re-tested without a fresh load.
+
+The app manager's shutdown command turned out to sit at 2, between start at 1
+and lookup at 3. With `gfenu` resident and a load returning `-EINVAL`, owner 50
+/ service 1 / command 2 with the application id returned success and echoed the
+id back, and the next load succeeded ([[our device]](../README.md#how-we-know)).
+
+### Four defects on paths that were already there
+
+Reached for the first time by driving an application from user space, rather
+than introduced by it:
+
+- the listener id arrives from the secure world as a `u64` and selects which
+  registered service handles a request; it was being narrowed;
+- `qcom_scm_qseecom_app_load()` documented that the image must come from a TZ
+  memory pool, then passed `qcom_tzmem_to_phys()`'s result to TZ unexamined — it
+  returns 0 outside a pool, so a wrong caller sent 0 as the image address
+  instead of getting an error;
+- giving up on a listener that would not settle left the application parked in
+  TZ awaiting an answer that never came, which by this file's own reasoning
+  makes every later QSEECOM call return `-EBUSY` until the device is power
+  cycled;
+- two error paths abandoned a request without reporting it, including one whose
+  return value was dropped entirely, so a failure to deliver the give-up answer
+  left exactly the wedge that answer exists to prevent.
+
+One further fix is deliberately not in this series: two `WARN_ON()`s in
+`qcom_scm_qseecom_call()` are unreachable from in-kernel callers but become
+reachable from an ordinary invoke, where `panic_on_warn` turns them into a
+denial of service. It is a standalone patch, since it stands on its own merits.
+
 ## Devices
 
 | node | use |
