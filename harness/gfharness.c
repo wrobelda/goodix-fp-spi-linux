@@ -677,13 +677,14 @@ static const char *supp_ok_match;
  * Request:
  *
  *   +0      u32   operation
- *   +4      char  path[252]       (path-taking ops: open, creat, stat, ...)
+ *   +4      char  path[256]       (path-taking ops: open, creat, lstat, ...)
  *   +260    u32   open flags      (open; bit 6 is O_CREAT)
+ *   +260    u32   mode            (creat, mkdir)
  *
  *   +4      s32   fd              (fd-based ops: read, write, close, lseek)
  *   +8      u32   count           (read)
  *   +8            data            (write)
- *   +8      s64   offset          (lseek)
+ *   +8      s32   offset          (lseek)
  *   +12     u32   whence          (lseek)
  *   +20008  u32   count           (write)
  *
@@ -691,14 +692,15 @@ static const char *supp_ok_match;
  *
  *   +0      u32   the operation, echoed back
  *   +4      s32   result: the fd for an open, a byte count for read and
- *                 write, 0 for success, or a negative errno on failure
+ *                 write, 0 for success, or -1 on failure
  *   +4            data            (read)
  *   +20004  s32   bytes read      (read)
  */
 #define FS_OP		0
 #define FS_PATH		4
-#define FS_PATH_MAX	252
+#define FS_PATH_MAX	256
 #define FS_OPEN_FLAGS	260
+#define FS_MODE		260
 
 #define FS_FD		4
 #define FS_ARG		8
@@ -714,18 +716,29 @@ static const char *supp_ok_match;
 #define FS_OP_OPEN	0x0202
 #define FS_OP_OPENAT	0x0203
 #define FS_OP_UNLINKAT	0x0204
+#define FS_OP_FCNTL	0x0205
 #define FS_OP_CREAT	0x0206
 #define FS_OP_READ	0x0207
 #define FS_OP_WRITE	0x0208
 #define FS_OP_CLOSE	0x0209
 #define FS_OP_LSEEK	0x020a
+#define FS_OP_LINK	0x020b
 #define FS_OP_UNLINK	0x020c
+#define FS_OP_RMDIR	0x020d
 #define FS_OP_FSTAT	0x020e
 #define FS_OP_LSTAT	0x020f
-#define FS_OP_STAT	0x0210
-#define FS_OP_MKDIR	0x0211
-#define FS_OP_RENAME	0x0214
+#define FS_OP_MKDIR	0x0210
+#define FS_OP_TESTDIR	0x0211
+#define FS_OP_TELLDIR	0x0212
+#define FS_OP_REMOVE	0x0213
+#define FS_OP_CHOWN_CHMOD 0x0214
+#define FS_OP_UNUSED	0x0215
 #define FS_OP_FSYNC	0x0216
+#define FS_OP_RENAME	0x0217
+#define FS_OP_FREE_SPACE 0x0218
+#define FS_OP_DIR_OPEN	0x0219
+#define FS_OP_DIR_READ	0x021a
+#define FS_OP_DIR_CLOSE	0x021b
 #define FS_OP_GETERR	0x021c	/* not a readdir: hands back the last errno */
 #define FS_OP_SHUTDOWN	0x021d
 
@@ -860,7 +873,7 @@ static int fs_reply_rc(uint8_t *buf, uint32_t op, int rc)
  *   op % 4 == 1  write     op / 4 == 1  force the data path
  *   op % 4 == 2  delete    op / 4 == 2  force the persist path
  *   op % 4 == 3  rename
- *   op == 12     returns a constant; never seen on the wire
+ *   op == 12     GPFS version query; returns version 2
  *
  * We serve every base the same way -- rooted under FS_ROOT, exactly as listener
  * 10 does -- because the names the application sends are absolute Android paths
@@ -952,8 +965,7 @@ static int gpfs_serve(uint8_t *buf)
 	}
 
 	if (op == 12) {
-		/* A constant in the vendor too; nothing to compute. */
-		printf("  gpfs op 12 -> constant 2\n");
+		printf("  gpfs version -> 2\n");
 		*(uint32_t *)(buf + GP_RSP_OP) = op;
 		*(int32_t *)(buf + GP_RSP_RET) = 2;
 		*(uint32_t *)(buf + GP_RSP_COUNT) = 0;
@@ -1049,7 +1061,6 @@ static int fs_serve(uint8_t *buf)
 {
 	char path[512], path2[512];
 	uint32_t op, count, flags;
-	struct stat st;
 	int fd, rc;
 	ssize_t n;
 
@@ -1059,11 +1070,7 @@ static int fs_serve(uint8_t *buf)
 
 	switch (op) {
 	case FS_OP_OPEN:
-	case FS_OP_CREAT:
-		flags = (op == FS_OP_CREAT)
-			? (O_WRONLY | O_CREAT | O_TRUNC)
-			: *(uint32_t *)(buf + FS_OPEN_FLAGS);
-
+		flags = *(uint32_t *)(buf + FS_OPEN_FLAGS);
 		/*
 		 * The TA says for itself whether it means to create -- bit 6,
 		 * O_CREAT -- so there is nothing left to guess at here. SAVE
@@ -1083,6 +1090,20 @@ static int fs_serve(uint8_t *buf)
 
 		fs_fd_remember(fd, path);
 		printf("  open  %s flags=0x%x -> fd %d\n", path, flags, fd);
+		return fs_reply(buf, op, fd);
+
+	case FS_OP_CREAT:
+		fs_mkparents(path);
+		flags = *(uint32_t *)(buf + FS_MODE);
+		fd = creat(path, (mode_t)flags);
+		if (fd < 0) {
+			printf("  creat %s mode=0%o -> %s\n", path, flags,
+			       strerror(errno));
+			return fs_fail(buf, op, -1);
+		}
+
+		fs_fd_remember(fd, path);
+		printf("  creat %s mode=0%o -> fd %d\n", path, flags, fd);
 		return fs_reply(buf, op, fd);
 
 	case FS_OP_READ:
@@ -1148,44 +1169,22 @@ static int fs_serve(uint8_t *buf)
 		printf("  fsync fd %d (%s)\n", fd, fs_fd_name(fd));
 		return fs_reply_rc(buf, op, fsync(fd));
 
-	case FS_OP_STAT:
-	case FS_OP_LSTAT:
-		rc = (op == FS_OP_STAT) ? stat(path, &st) : lstat(path, &st);
-		if (rc) {
-			printf("  stat  %s -> %s\n", path, strerror(errno));
-			return fs_fail(buf, op, -1);
-		}
-		printf("  stat  %s -> %lld bytes\n", path,
-		       (long long)st.st_size);
-		return fs_reply(buf, op, (int32_t)st.st_size);
-
-	case FS_OP_FSTAT:
-		fd = *(int32_t *)(buf + FS_FD);
-		if (fstat(fd, &st)) {
-			printf("  fstat fd %d -> %s\n", fd, strerror(errno));
-			return fs_fail(buf, op, -1);
-		}
-		printf("  fstat fd %d (%s) -> %lld bytes\n", fd,
-		       fs_fd_name(fd), (long long)st.st_size);
-		return fs_reply(buf, op, (int32_t)st.st_size);
-
 	case FS_OP_UNLINK:
 		printf("  unlink %s\n", path);
 		return fs_reply_rc(buf, op, unlink(path));
 
 	case FS_OP_MKDIR:
 		fs_mkparents(path);
-		rc = mkdir(path, 0755);
+		flags = *(uint32_t *)(buf + FS_MODE);
+		rc = mkdir(path, (mode_t)flags);
 		if (rc && errno == EEXIST)
 			rc = 0;
-		printf("  mkdir %s -> %d\n", path, rc);
+		printf("  mkdir %s mode=0%o -> %d\n", path, flags, rc);
 		return fs_reply_rc(buf, op, rc);
 
 	case FS_OP_RENAME:
-		buf[260 + 252] = '\0';
-		buf[520 + 252] = '\0';
-		fs_path(path, sizeof(path), (const char *)(buf + 260));
-		fs_path(path2, sizeof(path2), (const char *)(buf + 520));
+		buf[260 + FS_PATH_MAX - 1] = '\0';
+		fs_path(path2, sizeof(path2), (const char *)(buf + 260));
 		printf("  rename %s -> %s\n", path, path2);
 		return fs_reply_rc(buf, op, rename(path, path2));
 
@@ -1207,14 +1206,17 @@ static int fs_serve(uint8_t *buf)
 		/*
 		 * Dump anything not in the table. The opcode space is dense
 		 * (0x202..0x21d) and the ops left unimplemented here are the
-		 * directory walks and the statfs family, none of which the
-		 * application has ever asked for -- but if it does, the request
-		 * that proves it should be on record rather than guessed at.
+		 * fcntl, link, rmdir, stat, directory and free-space operations,
+		 * none of which the application has ever asked for. In particular,
+		 * fstat and lstat need Qualcomm's packed tz_stat reply rather than a
+		 * native struct stat. If any arrives, keep the request on record
+		 * rather than answering it with a guessed ABI.
 		 */
 		printf("  op 0x%04x UNIMPLEMENTED -- full request follows\n", op);
 		dump_buf(buf, SUPP_BUF_SIZE);
 		mark("supplicant: unimplemented op 0x%04x", op);
-		return fs_reply(buf, op, -EINVAL);
+		errno = ENOSYS;
+		return fs_fail(buf, op, -1);
 	}
 }
 
