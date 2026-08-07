@@ -89,15 +89,11 @@ directory empty and let the application populate it.
 
 Slots are allocated lowest-free-first, not by overwriting.
 
-## What is not discoverable from storage
+## Application index versus storage
 
-One of the gaps in the [status list](../README.md#status) is here.
-
-Nothing found so far reports which fingers the application believes are
-enrolled. `ENUMERATE` (1015) succeeds once group context is set but returns a
-descriptor with no ids in it, only a count: its `+100` reports how many fingers
-are enrolled ([[our device]](../README.md#how-we-know)). Listing the directory tells you which slots
-have objects, which is not the same thing as asking the application.
-
-`DUMP_TEMPLATE` (1079, class 4, payload 409612) follows every match in the
-vendor trace and is the obvious place to look next.
+The storage filenames are not the application-level index. Ask the application
+with `ENUMERATE` (1015) after setting group context. Its 184-byte response has
+the count at `+100`, group ids at `+104`, and finger ids at `+144`, with ten
+slots in each array. On this device it returned group `0`, finger
+`0x1da3a0c6` ([[our device]](../README.md#how-we-know)). The full 184-byte
+payload is required; a SAVE-sized buffer truncates the finger-id array.

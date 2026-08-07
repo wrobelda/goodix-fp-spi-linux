@@ -88,10 +88,10 @@ reference client that demonstrates the sequence, as the basis for a real
     not observed being enforced by the trusted application
   - [ ] [gatekeeper-signed auth token](docs/05-writing-a-client.md#the-authentication-token) —
     not implemented
-  - [ ] [listing enrolled fingers](docs/04-secure-storage.md#what-is-not-discoverable-from-storage) —
-    only a count, at `ENUMERATE` payload +100; no command reports ids
-  - [ ] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
-    not decoded; the error vocabulary is known, the field carrying it is not
+  - [x] [listing enrolled fingers](docs/04-secure-storage.md#application-index-versus-storage) —
+    `ENUMERATE` returns count, group ids, and finger ids
+  - [x] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
+    `IRQ` status, mirrored at payload +12 and mapped to Android acquired-info
   - [x] [which template matched](docs/02-ta-protocol.md#authentication) —
     finger id at IRQ payload +0x4fce8, copied into `AUTHENTICATE_FINISH`
   - [ ] [display wake on touch](docs/00-sensor-driver.md#panel-state) — not

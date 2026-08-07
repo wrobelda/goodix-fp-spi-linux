@@ -99,6 +99,8 @@
 #define GF_CMD_GET_AUTH_ID	1011
 #define GF_CMD_SET_ACTIVE_GROUP	1014
 #define GF_SAVE_PAYLOAD		112
+#define GF_ENUMERATE_PAYLOAD	184
+#define GF_ENUMERATE_MAX	10
 #define GF_SET_ACTIVE_GROUP_PAYLOAD	104
 #define GF_AUTH_FINISH_PAYLOAD	124
 
@@ -331,12 +333,16 @@ static const char *gf_strerror(uint32_t err)
 		{ 0,    "GF_SUCCESS" },
 		{ 1001, "GF_ERROR_BAD_PARAMS" },
 		{ 1002, "GF_ERROR_NO_MEMORY" },
+		{ 1011, "GF_ERROR_ACQUIRED_PARTIAL" },
+		{ 1013, "GF_ERROR_DUPLICATE_FINGER" },
 		{ 1023, "GF_ERROR_SPI_TRANSFER_ERROR" },
 		{ 1035, "GF_ERROR_WRITE_SECURE_OBJECT_FAILED" },
 		{ 1036, "GF_ERROR_READ_SECURE_OBJECT_FAILED" },
+		{ 1045, "GF_ERROR_DUPLICATE_AREA" },
 		{ 1047, "GF_ERROR_FINGER_NOT_EXIST" },
 		{ 1057, "GF_ERROR_UNTRUSTED_ENROLL" },
-	{ 1064, "GF_ERROR_MATCH_FAIL_AND_RETRY" },
+		{ 1064, "GF_ERROR_MATCH_FAIL_AND_RETRY" },
+		{ 1094, "GF_ERROR_TOO_FAST" },
 	};
 	size_t i;
 
@@ -1571,7 +1577,7 @@ static void pl_save(const uint8_t *pl, size_t len, int n)
 static int gf_service_irq(int fd, uint32_t session, uint8_t *pl, uint32_t *out)
 {
 	uint32_t mask, op;
-	int b;
+	int b, status;
 
 	/*
 	 * Deliberately *not* cleared. The handler in libgf_hal.so keeps one
@@ -1590,8 +1596,13 @@ static int gf_service_irq(int fd, uint32_t session, uint8_t *pl, uint32_t *out)
 		memcpy(pl + GF_IRQ_CTRL_ARM, &arm, sizeof(arm));
 	}
 
-	if (invoke_pl(fd, session, GF_CMD_IRQ, GF_IRQ_PAYLOAD, pl, pl) < 0)
+	status = invoke_pl(fd, session, GF_CMD_IRQ, GF_IRQ_PAYLOAD, pl, pl);
+	if (status < 0)
 		return -1;
+	if (status)
+		printf("  sample feedback: %u %s (payload +12: %u)\n",
+		       status, gf_strerror(status),
+		       *(uint32_t *)(pl + 12));
 
 	memcpy(&mask, pl + GF_IRQ_RSP_MASK, sizeof(mask));
 	memcpy(&op, pl + GF_IRQ_RSP_OP, sizeof(op));
@@ -1809,8 +1820,8 @@ static int remove_finger(int fd, uint32_t session, uint32_t fid)
  */
 static int enumerate(int fd, uint32_t session)
 {
-	uint8_t body[GF_SAVE_PAYLOAD];
-	uint32_t i, n;
+	uint8_t body[GF_ENUMERATE_PAYLOAD];
+	uint32_t i, declared, n = 0;
 
 	/*
 	 * Establish the group first. On its own ENUMERATE answers
@@ -1831,13 +1842,27 @@ static int enumerate(int fd, uint32_t session)
 		return -1;
 	}
 
-	n = *(uint32_t *)(body + 0x08);
-	printf("  +0x08 = %u\n", n);
-	for (i = 0; i < GF_SAVE_PAYLOAD / 4; i++) {
-		uint32_t v = *(uint32_t *)(body + i * 4);
+	/*
+	 * The response includes a count at +100, but Qualcomm's HAL does not
+	 * trust it when constructing its public result: it scans the returned
+	 * slots and counts non-zero finger ids at +144. Do the same, and report
+	 * a disagreement rather than silently hiding either representation.
+	 */
+	declared = *(uint32_t *)(body + 100);
+	for (i = 0; i < GF_ENUMERATE_MAX; i++)
+		if (*(uint32_t *)(body + 144 + 4 * i))
+			n++;
 
-		if (v)
-			printf("    +0x%02x = 0x%08x\n", i * 4, v);
+	printf("  enrolled: %u\n", n);
+	if (declared != n)
+		printf("  warning: payload count is %u, occupied-slot count is %u\n",
+		       declared, n);
+	for (i = 0; i < GF_ENUMERATE_MAX; i++) {
+		uint32_t fid = *(uint32_t *)(body + 144 + 4 * i);
+
+		if (fid)
+			printf("    slot %u: group %u, finger 0x%08x\n", i,
+			       *(uint32_t *)(body + 104 + 4 * i), fid);
 	}
 	return 0;
 }

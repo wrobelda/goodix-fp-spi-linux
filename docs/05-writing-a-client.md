@@ -138,15 +138,23 @@ than "there is none".
 only zero or `1064`. The matched group and finger are at `+0x4fce4` and
 `+0x4fce8`; copy them into `AUTHENTICATE_FINISH` and use the finger id as the
 identify result. This is separate from discovering the enrolled set before a
-match; see [what storage cannot tell
-you](04-secure-storage.md#what-is-not-discoverable-from-storage).
+match; see the [application index versus
+storage](04-secure-storage.md#application-index-versus-storage).
 
-**Enumerate does not tell you what is enrolled.** `ENUMERATE` (1015) exists and
-succeeds once group context is set, but the descriptor it returns carries no
-template ids ([[our device]](../README.md#how-we-know)), so while its `+100` tells you how many fingers
-are enrolled, it cannot answer "which fingers do you have". Keep
-your own index, and treat the object files as the source of truth for slot
-allocation.
+**Give enumerate its full buffer.** After `SET_ACTIVE_GROUP`, `ENUMERATE`
+(1015) takes 184 bytes. Its response contains the count at `+100`, group ids at
+`+104`, and finger ids at `+144`, with ten entries available in each array
+([[our device]](../README.md#how-we-know)). A SAVE-sized 112-byte buffer appears
+to return only a count because it cuts off the finger-id array.
+
+**Keep non-zero IRQ statuses.** On an image interrupt, the command status is
+per-sample feedback and is mirrored at payload `+12`. Qualcomm's
+`libgf_hal.so` maps selected Goodix errors to Android's partial, imager-dirty,
+too-slow, and vendor acquired-info values and continues draining the interrupt.
+A live partial press produced `1011`, left the enrolment count unchanged, and
+was mapped by the HAL to acquired-info partial. Treat transport failure as
+fatal, but report these TA statuses as retry/quality feedback rather than
+collapsing them into a generic operation failure.
 
 **Calibration is generated, not shipped.** The application writes its own
 baseline during `INIT` on a device that has none and maintains it during
@@ -168,7 +176,7 @@ label it in LSM policy rather than inheriting a permissive default. See
 
 **Templates are not exposed by any command we found.** The unexplored
 `DUMP_TEMPLATE` could change this answer — see
-[what storage cannot tell you](04-secure-storage.md#what-is-not-discoverable-from-storage).
+[the sealed file set](04-secure-storage.md#the-file-set).
 On everything we did exercise, libfprint's model of a print as data
 the host holds does not apply: the host holds sealed ciphertext keyed to the
 device. Enrolled prints cannot be migrated, backed up meaningfully, or matched

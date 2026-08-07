@@ -124,7 +124,7 @@ every class-3 command that computes or commits a calibration.
 | 1012 | `SAVE` | persists the enrolled template |
 | 1013 | `REMOVE` | unenrols one finger |
 | 1014 | `SET_ACTIVE_GROUP` | payload 104; establishes group context |
-| 1015 | `ENUMERATE` | needs group context; counts enrolled fingers at payload +100 but does **not** list them |
+| 1015 | `ENUMERATE` | payload 184; needs group context; see [Enumeration](#enumeration) |
 | 1016 | `IRQ` | payload 327624; the event pump |
 | 1017 / 1018 | `SCREEN_ON` / `SCREEN_OFF` | carry panel state; what the application does with it is not decoded. The [sensor driver](00-sensor-driver.md) has no route to the application and cannot send them: on the Android side [panel state goes to user space](00-sensor-driver.md#panel-state), so a client is what sends them here. See the [status list](../README.md#status) |
 | 1086 | `AUTHENTICATE_FINISH` | payload 124; completes a match |
@@ -169,7 +169,7 @@ Response fields, as byte offsets into the payload buffer:
 
 | off | field | when |
 |---|---|---|
-| 12 | **match verdict** | authentication |
+| 12 | image result: sample feedback or match verdict | image interrupts |
 | 100 | interrupt bitmask | always |
 | 104 | operation code | always |
 | 136 | navigation code | navigation events |
@@ -179,6 +179,64 @@ Response fields, as byte offsets into the payload buffer:
 
 The interrupt bits: `0x2` FINGER_DOWN, `0x4` FINGER_UP, `0x80` IMAGE,
 `0x400` ONE_FRAME_DONE.
+
+On an image interrupt, the command return status is the per-sample result and
+the application mirrors it at payload `+12`. Qualcomm's `libgf_hal.so` consumes
+the return status and maps selected non-zero Goodix values to Android
+acquired-info notifications, including partial (`1`), imager dirty (`3`), too
+slow (`4`), and vendor-defined values. A client should retain a non-zero `IRQ`
+status as sample feedback rather than treating every non-zero result as a fatal
+failure.
+
+The concrete mappings in this Qualcomm HAL are:
+
+| `IRQ` status | Android acquired-info |
+|---:|---:|
+| 1011, 1060 | partial (`1`) |
+| 1012, 1052, 1058, 1101, 1104 | imager dirty (`3`) |
+| 1117 | too slow (`4`) |
+| 1045 `GF_ERROR_DUPLICATE_AREA` | vendor `1025` (duplicate area) |
+| 1013 `GF_ERROR_DUPLICATE_FINGER` | vendor `1026` (duplicate finger) |
+| 1094 `GF_ERROR_TOO_FAST` | vendor `1029` (too fast) |
+
+The names above are not guesses from their ordering: the status values resolve
+to those strings through `libgf_hal.so`'s exported `err_table`, and the IRQ
+handler maps them to the indicated acquired-info values. The same handler also
+emits vendor `1028` directly on a finger-up flag rather than in response to a TA
+status. This is Goodix's `INPUT_TOO_LONG` acquired event: an older public Goodix
+interface assigns that name to the corresponding event immediately before
+duplicate-area and duplicate-finger, and the control flow here has the same
+finger-up semantics.
+
+There is no production acquired-info mapping for vendor `1027` in this HAL.
+The sole literal `1027` is passed to the test-command dispatcher, not
+`gf_hal_notify_acquired_info`; leave it unnamed unless another paired HAL is
+found to use it.
+
+These are HAL policy, not a claim that every Goodix generation assigns the
+same meaning to every numeric TA status. A native client can expose the raw
+status and apply the mappings appropriate to its paired TA/HAL generation.
+
+A live enrolment confirmed the path: a partial press returned `1011`, placed
+the same `1011` at payload `+12`, and left samples remaining unchanged at 25.
+The Qualcomm HAL maps `1011` to acquired-info partial (`1`). An accepted press
+returned zero and decremented samples remaining.
+
+## Enumeration
+
+Call `SET_ACTIVE_GROUP` first, then pass a 184-byte payload to `ENUMERATE`.
+The response is two parallel arrays with room for ten entries:
+
+| off | field |
+|---:|---|
+| 100 | number of entries |
+| 104 | `u32 group[count]` |
+| 144 | `u32 finger_id[count]` |
+
+This layout is used by both `gfenu` and Qualcomm's `libgf_hal.so`. A live call
+on this device returned group `0`, finger `0x1da3a0c6`. A shorter payload can
+expose the count while truncating one or both arrays, so the full 184 bytes are
+part of the command ABI.
 
 ## Enrolment
 
@@ -225,7 +283,8 @@ Both `SET_ACTIVE_GROUP` and `AUTHENTICATE` take the group id at payload +100.
 `AUTHENTICATE` does not consume the first 100 bytes returned by
 `SET_ACTIVE_GROUP`.
 
-**The verdict is at interrupt payload +12:** zero is a match,
+**For authentication, the image result at interrupt payload +12 is the
+verdict:** zero is a match,
 `1064 GF_ERROR_MATCH_FAIL_AND_RETRY` is not. It does not say *which* finger
 matched.
 
@@ -275,6 +334,7 @@ enrolment in the same session.
 | 1001 | `GF_ERROR_OUT_OF_MEMORY` |
 | 1003 | `GF_ERROR_BAD_PARAMS` |
 | 1009 | `GF_ERROR_PREPROCESS_FAILED` |
+| 1011 | `GF_ERROR_ACQUIRED_PARTIAL` |
 | 1033 | `GF_ERROR_OPEN_SECURE_OBJECT_FAILED` |
 | 1035 | `GF_ERROR_WRITE_SECURE_OBJECT_FAILED` |
 | 1047 | `GF_ERROR_FINGER_NOT_EXIST` |
@@ -299,10 +359,11 @@ for rejecting a sample:
     GF_ERROR_DUPLICATE_AREA            GF_ERROR_DYNAMIC_ENROLL_INVALID_PRESS_TOO_MUCH
     GF_ERROR_DYNAMIC_ERNOLL_INCOMPLETE_TEMPLATE   (sic)
 
-These are the strings, not their values, which would need the code that raises
-them. What carries them to a client is
-[not known](../README.md#status): an enrolment frame that is
-rejected simply does not decrement the samples-remaining count — in one run, 138
+These names do not all have values assigned here, but the transport is known:
+the return status of each `IRQ` invocation carries the sample result. Qualcomm's
+`libgf_hal.so` dispatches that status through its acquired-info mapping before
+continuing the IRQ drain. An enrolment frame that is rejected also does not
+decrement the samples-remaining count — in one run, 138
 finger-down/up events produced 10 accepted samples
 ([[our device]](../README.md#how-we-know)).
 
