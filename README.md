@@ -92,9 +92,8 @@ reference client that demonstrates the sequence, as the basis for a real
     only a count, at `ENUMERATE` payload +100; no command reports ids
   - [ ] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
     not decoded; the error vocabulary is known, the field carrying it is not
-  - [ ] [which template matched](docs/04-secure-storage.md#what-is-not-discoverable-from-storage) —
-    not reported; the verdict carries no id, so `identify` cannot be built, and
-    `DUMP_TEMPLATE` is unexplored
+  - [x] [which template matched](docs/02-ta-protocol.md#authentication) —
+    finger id at IRQ payload +0x4fce8, copied into `AUTHENTICATE_FINISH`
   - [ ] [display wake on touch](docs/00-sensor-driver.md#panel-state) — not
     decoded; `SCREEN_ON`/`SCREEN_OFF` (1017, 1018) are a client's to send, not
     the sensor driver's

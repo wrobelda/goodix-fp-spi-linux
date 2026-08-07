@@ -100,6 +100,7 @@
 #define GF_CMD_SET_ACTIVE_GROUP	1014
 #define GF_SAVE_PAYLOAD		112
 #define GF_SET_ACTIVE_GROUP_PAYLOAD	104
+#define GF_AUTH_FINISH_PAYLOAD	124
 
 /* How many GF_CMD_IRQ commands one interrupt may take before we give up. */
 #define GF_IRQ_MAX_DRAIN	12
@@ -1737,11 +1738,7 @@ static void commit_enrol(int fd, uint32_t session, uint32_t group, uint32_t fing
  * operation; the capture itself is interrupt driven, so nothing is written to
  * the template store until a finger has been on the sensor.
  */
-/*
- * Arm a match. The payload must echo back the descriptor SET_ACTIVE_GROUP
- * returns -- zeros give 1047 GF_ERROR_FINGER_NOT_EXIST whatever is on disk.
- * See docs/02-ta-protocol.md.
- */
+/* Arm a match after selecting the group at payload +100. */
 static int authenticate(int fd, uint32_t session)
 {
 	uint8_t body[GF_SAVE_PAYLOAD];
@@ -1749,13 +1746,12 @@ static int authenticate(int fd, uint32_t session)
 	memset(body, 0, sizeof(body));
 	*(uint32_t *)(body + 100) = 0;			/* group */
 	if (invoke_pl(fd, session, GF_CMD_SET_ACTIVE_GROUP,
-		      GF_SET_ACTIVE_GROUP_PAYLOAD, body, body)) {
+		      GF_SET_ACTIVE_GROUP_PAYLOAD, body, NULL)) {
 		printf("  SET_ACTIVE_GROUP: invoke failed\n");
 		return -1;
 	}
 
-	printf("--- arming AUTHENTICATE (templates=%u) ---\n",
-	       *(uint32_t *)(body + 0x10));
+	printf("--- arming AUTHENTICATE ---\n");
 
 	if (invoke_pl(fd, session, GF_CMD_AUTHENTICATE, sizeof(body), body,
 		      NULL)) {
@@ -1766,11 +1762,18 @@ static int authenticate(int fd, uint32_t session)
 }
 
 /* Close out a successful match. Not a query: the verdict is already known. */
-static void auth_finish(int fd, uint32_t session)
+static void auth_finish(int fd, uint32_t session, const uint8_t *context)
 {
-	uint8_t body[GF_SAVE_PAYLOAD];
+	uint8_t body[GF_AUTH_FINISH_PAYLOAD] = {};
 
-	memset(body, 0, sizeof(body));
+	*(uint32_t *)(body + 104) =
+		__builtin_bswap32(*(const uint32_t *)(context + 100));
+	*(uint32_t *)(body + 108) =
+		__builtin_bswap32(*(const uint32_t *)(context + 104));
+	*(uint32_t *)(body + 112) =
+		*(const uint32_t *)(context + GF_ENROL_GROUP_OFF);
+	*(uint32_t *)(body + 116) =
+		*(const uint32_t *)(context + GF_ENROL_FINGER_OFF);
 	if (invoke_pl(fd, session, GF_CMD_AUTHENTICATE_FINISH, sizeof(body),
 		      body, body))
 		printf("  AUTHENTICATE_FINISH: invoke failed\n");
@@ -1933,7 +1936,7 @@ static int capture(int fd, uint32_t session, int gf, int seconds)
 						 : "*** RECOGNISED ***", v);
 					mark("auth: verdict %u", v);
 					if (!v)
-						auth_finish(fd, session);
+						auth_finish(fd, session, pl);
 
 					/*
 					 * AUTHENTICATE is a one-shot arm, like

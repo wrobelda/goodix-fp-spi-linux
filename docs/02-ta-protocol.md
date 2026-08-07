@@ -127,7 +127,7 @@ every class-3 command that computes or commits a calibration.
 | 1015 | `ENUMERATE` | needs group context; counts enrolled fingers at payload +100 but does **not** list them |
 | 1016 | `IRQ` | payload 327624; the event pump |
 | 1017 / 1018 | `SCREEN_ON` / `SCREEN_OFF` | carry panel state; what the application does with it is not decoded. The [sensor driver](00-sensor-driver.md) has no route to the application and cannot send them: on the Android side [panel state goes to user space](00-sensor-driver.md#panel-state), so a client is what sends them here. See the [status list](../README.md#status) |
-| 1086 | `AUTHENTICATE_FINISH` | completion step for a match |
+| 1086 | `AUTHENTICATE_FINISH` | payload 124; completes a match |
 | 1089 | `GET_DEV_INFO` | payload 5500; chip id and firmware strings |
 
 The table above lists what we have seen sent, with
@@ -173,8 +173,8 @@ Response fields, as byte offsets into the payload buffer:
 | 100 | interrupt bitmask | always |
 | 104 | operation code | always |
 | 136 | navigation code | navigation events |
-| 327396 | group | enrolment |
-| 327400 | finger id | enrolment |
+| 327396 | group | enrolment and successful authentication |
+| 327400 | finger id | enrolment and successful authentication |
 | 327404 | samples remaining | enrolment |
 
 The interrupt bits: `0x2` FINGER_DOWN, `0x4` FINGER_UP, `0x80` IMAGE,
@@ -216,28 +216,36 @@ not assume they never will be.
 
 ## Authentication
 
-    SET_ACTIVE_GROUP (1014)               → returns a descriptor; keep it
-    AUTHENTICATE     (1010) + descriptor
+    SET_ACTIVE_GROUP (1014) + group at payload +100
+    AUTHENTICATE     (1010)
     IRQ              (1016) × N            ← verdict at payload +12
-    AUTHENTICATE_FINISH (1086)             only on a match
+    AUTHENTICATE_FINISH (1086), payload 124 only on a match
 
-**`AUTHENTICATE` must echo back the descriptor `SET_ACTIVE_GROUP` returns.**
-Sending a zeroed payload gets `1047 GF_ERROR_FINGER_NOT_EXIST` however many
-templates are on disk.
-
-The descriptor is **not** an enrolled-finger list, though it is tempting to read
-it as one. Its entire non-zero content is `+4 = 1`, `+8 = 9`, and ten
-entries of `0x3c`, and it is byte-identical whether one or two fingers are
-enrolled, with no finger id in it. Treat "the application refuses a zeroed
-payload" as the fact; the reason is not established.
+Both `SET_ACTIVE_GROUP` and `AUTHENTICATE` take the group id at payload +100.
+`AUTHENTICATE` does not consume the first 100 bytes returned by
+`SET_ACTIVE_GROUP`.
 
 **The verdict is at interrupt payload +12:** zero is a match,
 `1064 GF_ERROR_MATCH_FAIL_AND_RETRY` is not. It does not say *which* finger
 matched.
 
-`AUTHENTICATE_FINISH` is a completion step, not a query — across the traces we
-captured it appears only after successful matches and never in a run of
-failures ([[vendor trace]](../README.md#how-we-know)).
+`AUTHENTICATE_FINISH` is a completion step, not a query. Its 124-byte payload
+is:
+
+| Offset | Size | Meaning |
+|---:|---:|---|
+| +104 | 4 | byte-swapped IRQ mask from IRQ payload +100 |
+| +108 | 4 | byte-swapped operation from IRQ payload +104 |
+| +112 | 4 | matched group from IRQ payload +0x4fce4 |
+| +116 | 4 | matched finger id from IRQ payload +0x4fce8 |
+| +120 | 1 | feature-study output |
+| +121 | 1 | feature-study output |
+
+The secure handler passes `+116`, `+120`, and `+121` to
+`gf_algo_finger_feature_study`. FINISH is valid only after a successful match,
+with the matched group and finger copied from the IRQ payload
+([[our device]](../README.md#how-we-know)). Vendor traces never call it after an
+ordinary mismatch ([[vendor trace]](../README.md#how-we-know)).
 
 **`AUTHENTICATE` is one-shot.** An armed attempt ends with
 `AUTHENTICATE_FINISH` on a match or `CANCEL` when the system gives up, and a

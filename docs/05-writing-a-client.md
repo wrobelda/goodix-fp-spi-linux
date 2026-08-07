@@ -102,7 +102,7 @@ too, and only the file services need a process behind them.
 |---|---|
 | `open` | load if needed, `DETECT_SENSOR`, `INIT`, `INIT_FINISHED` |
 | `enroll` | `PRE_ENROLL`, `ENROLL`, pump `IRQ`, then `SAVE`, `SET_ACTIVE_GROUP`, `GET_AUTH_ID` |
-| `verify` / `identify` | `SET_ACTIVE_GROUP`, `AUTHENTICATE` with the returned descriptor, pump `IRQ`, `AUTHENTICATE_FINISH` on a match |
+| `verify` / `identify` | `SET_ACTIVE_GROUP` with the group at payload +100, `AUTHENTICATE`, pump `IRQ`, then 124-byte `AUTHENTICATE_FINISH` carrying the matched group/finger on a match |
 | `delete` | `REMOVE` with the finger id. Android precedes it with `POST_ENROLL`, which ends an enrolment session; only needed if one may be open |
 | `list` | **no mechanism** — see [Things that will bite](#things-that-will-bite) |
 
@@ -134,11 +134,12 @@ mismatch in a way that invites unlimited retries, and do not assume the
 application will stop them. "We did not observe an internal limit" is weaker
 than "there is none".
 
-**The verdict does not identify the finger.** Interrupt payload +12 is zero or
-`1064`, and nothing in it says which template matched. For `verify` (one
-expected finger) that is sufficient. For `identify` it is not, and no command
-has been found that reports the matched id — see `DUMP_TEMPLATE` under
-[what storage cannot tell you](04-secure-storage.md#what-is-not-discoverable-from-storage).
+**Use the full IRQ result for identify.** The compact verdict at payload +12 is
+only zero or `1064`. The matched group and finger are at `+0x4fce4` and
+`+0x4fce8`; copy them into `AUTHENTICATE_FINISH` and use the finger id as the
+identify result. This is separate from discovering the enrolled set before a
+match; see [what storage cannot tell
+you](04-secure-storage.md#what-is-not-discoverable-from-storage).
 
 **Enumerate does not tell you what is enrolled.** `ENUMERATE` (1015) exists and
 succeeds once group context is set, but the descriptor it returns carries no
