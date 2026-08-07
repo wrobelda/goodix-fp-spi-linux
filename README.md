@@ -297,7 +297,7 @@ boundaries as the guide to what should port and what needs re-checking.
 
 ## How we know
 
-Claims in these documents come from four different places, and they are not
+Claims in these documents come from five different places, and they are not
 equally strong. Where it matters, a claim carries a tag:
 
 | tag | source | what would overturn it |
@@ -306,8 +306,9 @@ equally strong. Where it matters, a claim carries a tag:
 | `([vendor trace])` | observed by instrumenting the stock Android HAL and `qseecomd` | a vendor path we did not trigger, or a different HAL build |
 | `([libdrmfs.so disassembly])` | read out of the vendor binary's code, not observed running | misreading the binary; a different build of it |
 | `([gfenu symbols])` | symbol names in the trusted application image | names that do not mean what they suggest |
+| `([Qualcomm minkipc])` | Qualcomm's QTEE listener protocol headers and service implementations in [`qualcomm/minkipc`](https://github.com/qualcomm/minkipc/tree/main/listeners) | a device carrying a modified Qualcomm listener ABI |
 
-Only the four labels in that table are tags, and each one in the text links back
+Only the five labels in that table are tags, and each one in the text links back
 here. Square brackets elsewhere — `"[gf_fts]"`, for instance — are literal
 strings quoted from a binary, not provenance.
 

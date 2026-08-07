@@ -45,6 +45,13 @@ cancellation, 8192 RPMB, 12288 SSD, 16384 secure UI, 36864 interrupt, 45056
 secure processor. That is seven, and `qseecomd` registers ten in total, so one
 id in the middle went unrecorded.
 
+Qualcomm now publishes QTEE implementations of four services from that same
+map in [`qualcomm/minkipc`](https://github.com/qualcomm/minkipc/tree/main/listeners):
+filesystem 10, time 11, RPMB 8192 and GPFS 28672. The transports differ — those
+libraries register QTEE callback objects through MinkIPC, while the Android
+binary observed here registers QSEECOM listeners — but the service ids and
+buffer protocols are Qualcomm's in both cases ([[Qualcomm minkipc]](../README.md#how-we-know)).
+
 These are QSEE services, not Goodix ones, and the names above are the service
 names rather than anything we watched being used. A client for a different
 trusted application will need whichever of them that application raises, and
@@ -112,40 +119,51 @@ A removal, for example, looks like this:
 
 ## Listener 10 — file system
 
-Shared buffer 20480 bytes (`0x5000`). Opcodes run from `0x202`, with gaps —
-`0x20d`, `0x215` and `0x218` have no entry — and with some operations reachable
-through more than one: `stat` appears at `0x210`, `statfs` at `0x212`, `0x213`
-and `0x217`, and `fstat` at both `0x20e` and `0x219`. Those repetitions are what
-the jump table contains; we exercised only a few of the opcodes, so whether the
-duplicates behave identically is untested.
+Shared buffer 20480 bytes (`0x5000`). Opcodes run densely from `0x202` through
+`0x21d`, with `0x215` deliberately unused. The table below comes from the
+`dispatch()` jump table in the reference device's stock
+`/vendor/lib64/libdrmfs.so` (build id
+`9af65349d5b69a2a08633e83772e6b6f`, SHA-256
+`f459fffb147cf37654ea6cebf732b8ddffb93bcfa76450d3cdec1dbfabe99bbc`),
+whose embedded mini debug information retains the names `dispatch`,
+`file_open`, `file_remove` and `file_rename`
+([[libdrmfs.so disassembly]](../README.md#how-we-know)).
 
-This table is read out of `libdrmfs.so`'s jump table
-([[libdrmfs.so disassembly]](../README.md#how-we-know)), not inferred from
-traffic. Inference is not reliable here: observed requests alone suggest `0x208`
-is `stat`, when it is `write`. Only the opcodes actually exercised are confirmed
-by traffic ([[our device]](../README.md#how-we-know)).
+Qualcomm's
+[`minkipc/listeners/libfsservice/fs/fs_msg.h`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/fs/fs_msg.h)
+defines the same `FILE_SERVICE_ID` (`0xa`), `FILE_SERVICE_BUF_LEN` (`20 *
+1024`) and `TZ_FS_MSG_CMD_*` sequence. Its
+[`fs_main.c`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/fs/fs_main.c)
+dispatches those commands and
+[`fs.c`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/fs/fs.c)
+implements the corresponding normal-world operations ([[Qualcomm minkipc]](../README.md#how-we-know)).
+Only the opcodes actually exercised by the trusted application are additionally
+confirmed by live traffic ([[our device]](../README.md#how-we-know)).
 
 | op | operation | op | operation |
 |---|---|---|---|
-| `0x202` | open | `0x210` | stat |
-| `0x203` | openat | `0x211` | mkdir |
-| `0x204` | unlinkat | `0x212`–`0x213` | statfs |
-| `0x205` | open + fcntl | `0x214` | rename |
-| `0x206` | creat | `0x216` | fsync |
-| `0x207` | read | `0x217` | statfs |
-| `0x208` | write | `0x219` | fstat |
-| `0x209` | close | `0x21a` | readdir |
-| `0x20a` | lseek | `0x21b` | closedir |
-| `0x20b` | link | `0x21c` | **get last errno** |
-| `0x20c` | unlink | `0x21d` | shutdown |
-| `0x20e` | fstat | | |
-| `0x20f` | lstat | | |
+| `0x202` | open | `0x210` | mkdir |
+| `0x203` | openat | `0x211` | test directory |
+| `0x204` | unlinkat | `0x212` | tell directory |
+| `0x205` | fcntl | `0x213` | remove |
+| `0x206` | creat | `0x214` | chown/chmod helper |
+| `0x207` | read | `0x215` | unused |
+| `0x208` | write | `0x216` | fsync |
+| `0x209` | close | `0x217` | rename |
+| `0x20a` | lseek | `0x218` | partition free size |
+| `0x20b` | link | `0x219` | opendir |
+| `0x20c` | unlink | `0x21a` | readdir |
+| `0x20d` | rmdir | `0x21b` | closedir |
+| `0x20e` | fstat | `0x21c` | **get last errno** |
+| `0x20f` | lstat | `0x21d` | shutdown |
 
 **Request**
 
     +0      u32   operation
-    +4      char  path[252]        path-taking ops
+    +4      char  path[256]        path-taking ops
     +260    u32   open flags       open; bit 6 is O_CREAT
+    +260    u32   mode             creat / mkdir
+    +260    char  new_path[256]    rename; the old path is at +4
 
     +4      s32   fd               descriptor-based ops
     +8      u32   count            read
@@ -161,7 +179,11 @@ by traffic ([[our device]](../README.md#how-we-know)).
     +4            data             read
     +20004  s32   bytes read       read
 
-Eight bytes for every op except read, which is 20008.
+Of the operations exercised here, replies are eight bytes except for read,
+which is 20008. The file-status and directory operations have their own packed
+reply structures, defined concretely in Qualcomm's `fs_msg.h`; they have not
+been needed by `gfenu` and the reference client deliberately does not guess at
+them.
 
 Three things a client must get right:
 
@@ -190,10 +212,28 @@ encodes both the operation and which base directory to resolve against:
     op % 4 == 1   write         op / 4 == 1   force the data path
     op % 4 == 2   delete        op / 4 == 2   force the persist path
     op % 4 == 3   rename
-    op == 12      returns a constant; never observed in use
+    op == 12      GPFS version query; returns version 2
 
 In practice the Goodix application uses `0` (read), `1` (write) and `2`
 (delete). Persisting an object is delete-then-write.
+
+Qualcomm's
+[`minkipc/listeners/libfsservice/gpfs/gpfs_msg.h`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/gpfs/gpfs_msg.h)
+defines the same `GPFILE_SERVICE_ID` (`0x7000`) and `GPFILE_SERVICE_BUF_LEN`
+(`504 * 1024`). It names operations 4–7 as the data-directory variants, 8–11
+as the persist-directory variants, and 12 as `TZ_GPFS_MSG_CMD_GPFS_VERSION`;
+[`gpfs_main.c`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/gpfs/gpfs_main.c)
+dispatches them, and
+[`gpfs.c`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/gpfs/gpfs.c)
+returns GPFS version 2
+([[Qualcomm minkipc]](../README.md#how-we-know)). This confirms the operation
+grouping recovered from the stock `libdrmfs.so`; operations 0–3 are its
+automatic-resolution group.
+
+A fresh native-Linux `INIT` on the reference device successfully used operation
+0 to read calibration objects, then 2 and 1 to delete and rewrite them. That
+confirms the automatic-resolution read, delete and write meanings and the field
+offsets below ([[our device]](../README.md#how-we-know)).
 
 **Request**
 
