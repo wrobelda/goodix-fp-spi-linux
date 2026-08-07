@@ -39,13 +39,32 @@ driver.
 Three things about that supplicant are unsettled, and they belong to whoever
 writes it rather than to this project.
 
-**Its home.** `optee_client`'s `tee-supplicant` is the same role and already
-backs GlobalPlatform storage, so extending it would avoid carrying a separate
-project. It does not work unmodified: it refuses any device whose `impl_id` is
-not `TEE_IMPL_ID_OPTEE`, it dispatches on OP-TEE's own RPC command numbers
-rather than [listener ids](03-listener-services.md#the-listener-map), and it has
-no equivalent of the per-listener registration handshake. Whether upstream wants
-a non-OP-TEE backend is theirs to say.
+**Its home.** Qualcomm now publishes the closest implementation in
+[`qualcomm/minkipc`](https://github.com/qualcomm/minkipc). Its
+[`qtee_supplicant/src/listener_mngr.c`](https://github.com/qualcomm/minkipc/blob/main/qtee_supplicant/src/listener_mngr.c)
+loads separate FS, GPFS, time and RPMB service libraries, and those libraries
+speak the same Qualcomm listener protocols documented here. In the filesystem
+library,
+[`fs_main.c`](https://github.com/qualcomm/minkipc/blob/main/listeners/libfsservice/fs/fs_main.c)
+is the useful dividing line: `init()` allocates the buffer and registers
+listener 10 through `CListenerCBO_new()` and
+`IRegisterListenerCBO_register()`, while `smci_dispatch()` accepts that buffer
+and dispatches the filesystem commands ([[Qualcomm minkipc]](../README.md#how-we-know)).
+
+It does not work unmodified with this driver. MinkIPC registration creates
+QTEE callback objects; a legacy-QSEECOM supplicant instead opens
+`/dev/teeprivN`, registers each numeric listener and receives all of their
+requests through one `TEE_IOC_SUPPL_RECV` queue. The reusable part is therefore
+the protocol definitions and operation handlers below each library's
+Mink-specific `init()`, with one QSEECOM receive loop dispatching by listener id.
+Whether that becomes another transport in `minkipc` or a separate daemon using
+its service code is an upstream and ownership question.
+
+`optee_client`'s `tee-supplicant` remains the precedent for the process's role
+and lifecycle, but is a less direct code match. It refuses a device whose
+`impl_id` is not `TEE_IMPL_ID_OPTEE` and dispatches OP-TEE RPC commands rather
+than Qualcomm listener protocols. Reusing it would first require a
+non-OP-TEE-backend architecture of its own.
 
 **Whether it loads applications as well as serving them.** The reference client
 separates the two — `--supp` serves, `--load` loads, both on `/dev/teepriv0`,

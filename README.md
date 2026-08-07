@@ -139,9 +139,13 @@ reference client that demonstrates the sequence, as the basis for a real
   [belongs in one machine-wide process](docs/05-writing-a-client.md#where-it-should-live)
   rather than inside the `fprintd` driver, since the kernel allows one receiver
   per device (not per trusted app!) and a second QSEE client handling some other
-  type of app could not register a handler of its own. Its home, whether it also
-  loads applications, and whether the time listener is answered in the kernel
-  are all open.
+  type of app could not register a handler of its own. Qualcomm's
+  [`minkipc`](https://github.com/qualcomm/minkipc) is the closest source-level
+  reference: it publishes the same FS, GPFS, time and RPMB services, but their
+  registration is tied to QTEE's Mink object transport. Whether to give those
+  handlers a QSEECOM transport in that project or carry a separate daemon,
+  whether it also loads applications, and whether the time listener is answered
+  in the kernel are all open.
 
 ## What is not understood
 
