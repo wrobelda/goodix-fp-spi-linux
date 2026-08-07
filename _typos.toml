@@ -1,0 +1,9 @@
+[default]
+locale = "en-gb"
+
+[default.extend-words]
+# deliberate (sic) quote of a vendor typo in docs/02-ta-protocol.md
+ernoll = "ernoll"
+# Goodix protocol command names, the harness flag and the libfprint operation
+# are all spelled the American way
+enroll = "enroll"
