@@ -101,6 +101,39 @@ reference client that demonstrates the sequence, as the basis for a real
 - [ ] **[GW in-display family](docs/00-sensor-driver.md#one-driver-family-many-parts)** —
   untested; differs from the capacitive copies mostly in
   board power and pins
+- [ ] **Upstreaming the kernel side** — both drivers build and run, but neither
+  has been posted. These have to be settled with the maintainers first:
+  - [ ] [`qcom-scm-blocked-listener-warn`](https://github.com/wrobelda/linux/tree/qcom-scm-blocked-listener-warn) —
+    two `WARN_ON()`s in `qcom_scm_qseecom_call()` that no in-kernel caller can
+    reach but an ordinary invoke can, so `panic_on_warn` turns them into a
+    denial of service. A standalone patch the TEE series depends on
+  - [ ] **`TEE_IMPL_ID_QSEECOM = 5` is new uapi** — a client tells this driver
+    from [`qcomtee`](docs/01-kernel-tee-driver.md#why-this-driver) by reading it
+    from `TEE_IOC_VERSION`, so the number is ABI and needs the TEE maintainer's
+    ack in the same posting
+  - [ ] **Sessions are opened by name, not by UUID** — QSEE matches on a string
+    and there is nothing to render a UUID into, so the name arrives in a
+    parameter and the UUID must be zero. `amdtee` renders its UUID into a
+    firmware filename; `qcomtee` hit the same wall and used objref parameters.
+    This driver does not claim `TEE_GEN_CAP_GP`, but the TEE subsystem may
+    prefer a generic "session by name" of its own to each backend overloading a
+    parameter
+  - [ ] **The privileged device's `open_session` is polymorphic** — it tells
+    "register a listener" from "load an application" by whether parameter 0 is
+    a value or a memref. Two `func` values would document themselves
+  - [ ] **[`CAP_SYS_ADMIN` on the privileged device](docs/01-kernel-tee-driver.md#security)** —
+    no other TEE backend checks a capability; OP-TEE relies on the permissions
+    of `/dev/teepriv0`. Worth offering to drop rather than defending
+  - [ ] **A TZ memory pool per invoke** — the bounce buffer for each command
+    gets its own pool. For the [`IRQ` command](docs/02-ta-protocol.md#interrupts)
+    that is a large allocation at interrupt rates, and `-ENOMEM` mid-capture
+    under fragmentation
+  - [ ] **The `mdt_loader` extension** needs a soc/qcom ack — it adds two
+    functions and a Kconfig prompt to a file this project does not own; see
+    [what the rest of the kernel had to grow](docs/01-kernel-tee-driver.md#what-the-rest-of-the-kernel-had-to-grow)
+  - [ ] **[A wedged supplicant blocks every QSEECOM user](docs/01-kernel-tee-driver.md#a-wedged-supplicant-blocks-more-than-itself)**,
+    in-kernel ones included — which decides who may be granted the privileged
+    device
 
 
 ## What is not understood

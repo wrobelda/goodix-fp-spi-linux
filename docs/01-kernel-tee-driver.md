@@ -373,6 +373,21 @@ Note this is separate from the *protocol-level* result. Both listener protocols
 report their own errors inside the reply buffer and still return transport
 success — see the [listener protocols](03-listener-services.md).
 
+### A wedged supplicant blocks more than itself
+
+Servicing a listener request happens with the QSEECOM call lock held, and every
+QSEECOM caller shares that lock — including in-kernel ones, which is what
+`qcom_qseecom_uefisecapp` is. A supplicant that stops answering therefore stalls
+an EFI variable read for as long as the request takes to time out, and an
+application that will not settle can repeat that for several rounds before the
+driver gives up on it.
+
+That is inherent to serialising a single secure-world interface rather than a
+defect, and it is why the supplicant timeout is short. It is worth knowing
+before granting anyone access to the privileged device: the blast radius of a
+wedged supplicant is every QSEECOM user on the system, not only the client that
+registered the listener.
+
 ### Teardown
 
 The supplicant is torn down when its device file closes, not when the context is
