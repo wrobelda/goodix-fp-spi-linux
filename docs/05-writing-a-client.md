@@ -185,30 +185,35 @@ anywhere else.
 ## The authentication token
 
 `ENROLL` carries an `hw_auth_token_t`; its layout, the evidence that it is
-verified, and the unprovisioned-device loophole the reference client relies on
-are all documented in
+verified, and the challenge-only token the reference client relies on are all
+documented in
 [the protocol document](02-ta-protocol.md#the-authentication-token).
 
-A production `fprintd` driver should obtain a real token. The gatekeeper application is
-`miriskm`, driven with plain `QSEECom_send_cmd` and CBOR payloads (Concise Binary Object Representation, RFC 8949):
+The tested TA accepts a token containing the fresh `PRE_ENROLL` challenge with
+the other fields zero, both before and after provisioning an Android
+lock-screen credential. This makes the reference lifecycle usable on this
+device, with authorization to enrol enforced above the fingerprint protocol. A
+production client still cannot assume another model or firmware offers the
+same shortcut.
 
-    0x00021001  enroll   { 3: uid, 8: desired password }
-                      -> { 6: password handle }
-    0x00021002  verify   { 3: uid, 4: challenge, 6: handle, 9: password }
-                      -> { 12: user_id, 14: authenticator_type,
-                           15: timestamp, 16: hmac }
-    0x00021003  ?        { 3: uid }   -> large, unidentified
+Android uses a signed token, which preserves an authorization boundary in
+secure world rather than relying only on access control around the Linux
+fingerprint service. A production design should use that stronger path where a
+credential service is available; the challenge-only behaviour is a property of
+this tested TA, not a general protocol guarantee.
 
-Key 3 is the user id, key 4 the challenge. Keys 14 and 15 come back already
-byte-swapped to match the packed token's mixed endianness — copy them straight
-through rather than re-encoding. The handle is 58 bytes with the secure user id
-at +1, little endian.
-
-This is untested from Linux. Treat it as a starting point, not a specification.
+The fingerprint client should not implement password storage or accept a PIN
+only to send it directly to Keymaster. It should ask a separate credential
+service to verify a credential for the `PRE_ENROLL` challenge and return the
+completed 69-byte token. The observed `keymaster64` transport, Android's
+synthetic-password derivation, and the remaining work for a native Linux
+Gatekeeper service are documented in
+[the Gatekeeper protocol](06-Gatekeeper-protocol.md).
 
 ## Reference client
 
-`harness/gfharness.c` implements all of this except gatekeeper and lockout.
+`harness/gfharness.c` implements the fingerprint lifecycle except lockout and a
+native signed-token provider.
 It is a single-file test client, not a library: it blocks, prints to stdout, and
 assumes one device. Read it for the sequences and the file service; do not
 copy its main loop.

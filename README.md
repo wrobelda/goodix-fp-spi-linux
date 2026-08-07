@@ -86,8 +86,9 @@ reference client that demonstrates the sequence, as the basis for a real
     generated on-the-fly by `gfenu` itself, nothing to handle
   - [ ] [lockout policy](docs/05-writing-a-client.md#things-that-will-bite) —
     not observed being enforced by the trusted application
-  - [ ] [gatekeeper-signed auth token](docs/05-writing-a-client.md#the-authentication-token) —
-    not implemented
+  - [ ] [Gatekeeper-signed enrolment auth token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu) —
+    Android's signing flow is decoded, but Linux does not yet obtain and submit
+    a signed HAT; the harness currently uses this TA's challenge-only fallback
   - [x] [listing enrolled fingers](docs/04-secure-storage.md#application-index-versus-storage) —
     `ENUMERATE` returns count, group ids, and finger ids
   - [x] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
@@ -156,9 +157,13 @@ What these have in common is that reading or porting the downstream code does
 not settle them. They need a device to test against, a vendor to answer, or
 evidence from outside this project entirely.
 
-- [ ] **Whether the gatekeeper path changes once a credential exists.** An unsigned
-  token is accepted on a device that never had one provisioned ([[our device]](#how-we-know)).
-  What happens after provisioning is untested.
+- [ ] **Whether another TA or firmware generation requires a
+  [Gatekeeper-signed enrolment token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu).**
+  This one accepts a token carrying only the fresh challenge
+  both before and after a lock-screen credential is provisioned
+  ([[our device]](#how-we-know)). Android supplies a signed, challenge-bound
+  token; its UI's backup-PIN requirement is framework policy, not an additional
+  Goodix protocol step.
 - [ ] **Whether the trusted application enforces any lockout of its own.** Not
   observed ([status](#status)); treat the absence as unverified and implement
   lockout regardless.
@@ -184,7 +189,7 @@ evidence from outside this project entirely.
 
 ## What is where
 
-Five pieces, each independently useful; the first four had to exist for any of
+Six pieces, each independently useful; the first four had to exist for any of
 it to work.
 
 | layer | what it does | where |
@@ -194,6 +199,7 @@ it to work.
 | **TA protocol** | the command set the Goodix application speaks — undocumented, recovered by tracing the Android stack and reading the vendor's binaries | [`docs/02-ta-protocol.md`](docs/02-ta-protocol.md) |
 | **Listener services** | the file service the application needs the normal world to run: it has no storage of its own and asks for reads and writes of its encrypted data — also undocumented | [`docs/03-listener-services.md`](docs/03-listener-services.md), the stored objects in [`docs/04-secure-storage.md`](docs/04-secure-storage.md) |
 | **Client** | a proof of concept, basis for the real `fprintd`-based client | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md), code in [`harness/`](harness/) |
+| **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorize enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
 
 Read them in order. The TA protocol is meaningless without a listener service
 running, and the listener service cannot be registered without the kernel
@@ -364,9 +370,10 @@ device should say so.
 | term | meaning |
 |---|---|
 | **`gfenu`** | Goodix's fingerprint trusted application as shipped on the Xiaomi Pad 5 Pro 5G. Other models carry Goodix's implementation as their own application, under a different name |
-| **gatekeeper** | Android's credential authority: it verifies the PIN or password and issues signed tokens attesting that it happened. Biometric enrolment expects one of its tokens |
-| **auth token** | the `hw_auth_token_t` blob gatekeeper signs and `ENROLL` carries, attesting that the user authenticated recently |
-| **`miriskm`** | the gatekeeper trusted application on this platform, which signs those tokens |
+| **gatekeeper** | [Android's credential authority](docs/06-Gatekeeper-protocol.md): it verifies the PIN or password and issues signed tokens attesting that it happened. Biometric enrolment expects one of its tokens |
+| **auth token** | the [`hw_auth_token_t` blob](docs/02-ta-protocol.md#the-authentication-token) Gatekeeper signs and `ENROLL` carries, attesting that the user authenticated recently |
+| **Keymaster / `km41.mbn`** | the [trusted application that implements Gatekeeper](docs/06-Gatekeeper-protocol.md) on this platform and signs those tokens. It lives in the dedicated `keymaster_a`/`keymaster_b` partition rather than among the dynamically loaded applications in `NON-HLOS.bin` |
+| **`miriskm`** | a separate Xiaomi risk-management trusted application. Its own diagnostics and strings concern device-status, registration-token, certificate and remote-auth operations; it is not Android Gatekeeper |
 
 **The hardware, and the stack this is aimed at**
 

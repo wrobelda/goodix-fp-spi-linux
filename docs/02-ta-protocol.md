@@ -54,10 +54,10 @@ one that decides whether any of this can be packaged rather than extracted per
 device. Treat provenance as unresolved per model rather than assuming either
 way.
 
-`gfenu` is not the only trusted application in play. Enrolment expects an
-authentication token signed by the gatekeeper application, `miriskm`, which runs
-in the same secure world and holds the signing key — see
-[the authentication token](#the-authentication-token).
+Android supplies enrolment with an authentication token signed by the
+platform's Keymaster application. This document covers only the token boundary
+with `gfenu`; the signer and its wire protocol are documented separately in
+[the Gatekeeper protocol](06-Gatekeeper-protocol.md).
 
 What this document describes is the protocol such an application speaks, not the
 image itself.
@@ -381,13 +381,16 @@ finger-down/up events produced 10 accepted samples
 | +29 | 8 | timestamp (**big endian**) |
 | +37 | 32 | HMAC |
 
-Under the Android stack, clearing only the HMAC turns `GF_SUCCESS` into
-`1057 GF_ERROR_UNTRUSTED_ENROLL`, so the token is genuinely verified there. The
-signing key belongs to the gatekeeper application (`miriskm`), so a token has to
-be obtained rather than constructed.
+Android obtains a challenge-bound token from Gatekeeper and passes it to
+`ENROLL` before the first sensor touch. Clearing only its HMAC changes
+`GF_SUCCESS` to `1057 GF_ERROR_UNTRUSTED_ENROLL`, so this path genuinely verifies
+the signature. See [the Gatekeeper protocol](06-Gatekeeper-protocol.md) for the
+signing flow.
 
-On this device, in a state where no gatekeeper credential had ever been
-provisioned, an unsigned token was accepted ([[our device]](../README.md#how-we-know)) — which is what makes
-the reference client in [`harness/`](../harness/) work without one. Whether that holds once a credential exists, or on
-another model or firmware version, we have not tested. **Do not rely on this**
-— see [what a client author should know](05-writing-a-client.md#things-that-will-bite).
+The reference client in [`harness/`](../harness/) repeatedly succeeded with
+only the fresh challenge populated and all signature fields zero. This was
+tested both before and after provisioning an Android lock-screen credential;
+provisioning Gatekeeper did not change `gfenu`'s behaviour. Whether another
+model or firmware accepts the same shortcut remains unknown. **Do not rely on
+this** — see [what a client author should
+know](05-writing-a-client.md#things-that-will-bite).
