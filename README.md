@@ -84,9 +84,9 @@ reference client that demonstrates the sequence, as the basis for a real
   - [x] [unenrolment](docs/02-ta-protocol.md#removal)
   - [x] [calibration](docs/04-secure-storage.md#calibration-is-generated) —
     generated on-the-fly by `gfenu` itself, nothing to handle
-  - [ ] [lockout policy](docs/05-writing-a-driver.md#things-that-will-bite) —
+  - [ ] [lockout policy](docs/05-writing-a-client.md#things-that-will-bite) —
     not observed being enforced by the trusted application
-  - [ ] [gatekeeper-signed auth token](docs/05-writing-a-driver.md#the-authentication-token) —
+  - [ ] [gatekeeper-signed auth token](docs/05-writing-a-client.md#the-authentication-token) —
     not implemented
   - [ ] [listing enrolled fingers](docs/04-secure-storage.md#what-is-not-discoverable-from-storage) —
     only a count, at `ENUMERATE` payload +100; no command reports ids
@@ -135,6 +135,13 @@ reference client that demonstrates the sequence, as the basis for a real
     in-kernel ones included — which decides who may be granted the privileged
     device
 
+- [ ] **A QSEECOM supplicant** — the listener service
+  [belongs in one machine-wide process](docs/05-writing-a-client.md#where-it-should-live)
+  rather than inside the `fprintd` driver, since the kernel allows one receiver
+  per device (not per trusted app!) and a second QSEE client handling some other
+  type of app could not register a handler of its own. Its home, whether it also
+  loads applications, and whether the time listener is answered in the kernel
+  are all open.
 
 ## What is not understood
 
@@ -183,7 +190,7 @@ it to work.
 | **TEE driver** | exposes QSEE trusted applications through Linux's TEE subsystem, so user space can reach them | [`docs/01-kernel-tee-driver.md`](docs/01-kernel-tee-driver.md), branch [`qcom-qseecom-tee`](https://github.com/wrobelda/linux/tree/qcom-qseecom-tee) |
 | **TA protocol** | the command set the Goodix application speaks — undocumented, recovered by tracing the Android stack and reading the vendor's binaries | [`docs/02-ta-protocol.md`](docs/02-ta-protocol.md) |
 | **Listener services** | the file service the application needs the normal world to run: it has no storage of its own and asks for reads and writes of its encrypted data — also undocumented | [`docs/03-listener-services.md`](docs/03-listener-services.md), the stored objects in [`docs/04-secure-storage.md`](docs/04-secure-storage.md) |
-| **Client** | a proof of concept for writing the real `fprintd` driver, not a daemon | [`docs/05-writing-a-driver.md`](docs/05-writing-a-driver.md), code in [`harness/`](harness/) |
+| **Client** | a proof of concept, basis for the real `fprintd`-based client | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md), code in [`harness/`](harness/) |
 
 Read them in order. The TA protocol is meaningless without a listener service
 running, and the listener service cannot be registered without the kernel

@@ -243,7 +243,7 @@ failures ([[vendor trace]](../README.md#how-we-know)).
 `AUTHENTICATE_FINISH` on a match or `CANCEL` when the system gives up, and a
 fresh `AUTHENTICATE` is required for the next attempt. Further presses after a
 verdict raise no frames at all. When to arm is the driver's policy — see
-[arm on demand](05-writing-a-driver.md#things-that-will-bite).
+[arm on demand](05-writing-a-client.md#things-that-will-bite).
 
 ## Removal
 
@@ -321,4 +321,4 @@ On this device, in a state where no gatekeeper credential had ever been
 provisioned, an unsigned token was accepted ([[our device]](../README.md#how-we-know)) — which is what makes
 the reference client in [`harness/`](../harness/) work without one. Whether that holds once a credential exists, or on
 another model or firmware version, we have not tested. **Do not rely on this**
-— see [what a driver author should know](05-writing-a-driver.md#things-that-will-bite).
+— see [what a client author should know](05-writing-a-client.md#things-that-will-bite).

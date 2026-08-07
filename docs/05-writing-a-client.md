@@ -1,19 +1,13 @@
-# Layer 5: writing an fprintd driver
+# Layer 5: writing a client
 
 What a real implementation has to do, and where the reference client in
 `harness/` is deliberately not one.
 
 ## Shape
 
-`fprintd` drivers are libfprint devices. This one is unusual in that almost
-nothing happens in the libfprint driver: image capture, template construction
-and matching all happen inside the trusted application. What you are writing is
-a protocol client plus a file server.
-
-Throughout this document "the driver" means the libfprint one you are writing.
-The two kernel drivers are named explicitly where they come up: the
-[TEE driver](01-kernel-tee-driver.md) and the
-[sensor driver](00-sensor-driver.md).
+What plugs into `fprintd` is a libfprint device, which libfprint calls a driver.
+Image capture, template construction and matching all happen inside the trusted
+application, so what you are writing is a protocol client plus a file server.
 
 Three concurrent concerns:
 
@@ -34,10 +28,40 @@ trusted application on the machine. OP-TEE ships one in `optee_client`, and
 
 The kernel permits
 [one receiver per device](01-kernel-tee-driver.md#one-supplicant-queue-per-device),
-so a system with a second QSEE client cannot have two of them. Building a file
-service into a libfprint driver works only for as long as nothing else on the
-system talks to QSEE. `harness/--supp` is a prototype of the supplicant, not a
-component to lift into a driver.
+so a second QSEE client, handling some other type of application, could not
+register a handler of its own. Building a file service into the client works
+only for as long as nothing else on the system talks to QSEE. `harness/--supp`
+is a prototype of the supplicant, not a component to lift into an `fprintd`
+driver.
+
+### Where it should live
+
+Three things about that supplicant are unsettled, and they belong to whoever
+writes it rather than to this project.
+
+**Its home.** `optee_client`'s `tee-supplicant` is the same role and already
+backs GlobalPlatform storage, so extending it would avoid carrying a separate
+project. It does not work unmodified: it refuses any device whose `impl_id` is
+not `TEE_IMPL_ID_OPTEE`, it dispatches on OP-TEE's own RPC command numbers
+rather than [listener ids](03-listener-services.md#the-listener-map), and it has
+no equivalent of the per-listener registration handshake. Whether upstream wants
+a non-OP-TEE backend is theirs to say.
+
+**Whether it loads applications as well as serving them.** The reference client
+separates the two — `--supp` serves, `--load` loads, both on `/dev/teepriv0`,
+which works only because the kernel allows
+[one receiver rather than one opener](01-kernel-tee-driver.md#one-supplicant-queue-per-device).
+A daemon could own loading, and there is an argument for it, since the
+supplicant has to be up before any application starts. The alternative is that
+loading stays with whoever wants the application and the
+[reference count](01-kernel-tee-driver.md#application-lifetime) handles
+lifetime.
+
+**Whether the time listener reaches user space at all.** OP-TEE answers the
+clock, i2c transfers and shared-memory allocation in the kernel and forwards
+only the rest to `tee-supplicant`. By that division
+[listener 11](03-listener-services.md#the-listener-map) is a kernel answer here
+too, and only the file services need a process behind them.
 
 ## Ordering that is not optional
 
@@ -85,7 +109,7 @@ Android HAL send it, including on a device driven to a real lockout
 attempts on its own ([[our device]](../README.md#how-we-know)).
 
 That policy lives above the driver on both systems: `system_server` on Android,
-`fprintd` and the PAM stack on Linux. The point for a driver author is that
+`fprintd` and the PAM stack on Linux. The point for a `fprintd` driver author is that
 nothing *below* your code appears to be counting failures, so do not report a
 mismatch in a way that invites unlimited retries, and do not assume the
 application will stop them. "We did not observe an internal limit" is weaker
@@ -137,7 +161,7 @@ verified, and the unprovisioned-device loophole the reference client relies on
 are all documented in
 [the protocol document](02-ta-protocol.md#the-authentication-token).
 
-A production driver should obtain a real token. The gatekeeper application is
+A production `fprintd` driver should obtain a real token. The gatekeeper application is
 `miriskm`, driven with plain `QSEECom_send_cmd` and CBOR payloads (Concise Binary Object Representation, RFC 8949):
 
     0x00021001  enroll   { 3: uid, 8: desired password }
