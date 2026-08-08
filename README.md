@@ -171,6 +171,17 @@ evidence from outside this project entirely.
   observed `gfenu` raising a request on any of them, across every flow we
   exercised ([[our device]](#how-we-know)). Unexercised paths, and other firmware versions, are
   not covered by that.
+- [ ] **How broadly the recovered trusted-application ABI applies.** `gfenu` is
+  the filename supplied by this device's firmware description, not a known
+  cross-device Goodix protocol name.  We do not know whether another OEM's
+  Goodix application, another sensor generation, or a Goodix application on a
+  MediaTek or newer Qualcomm TEE uses the same command numbers, payload layouts,
+  interrupt state machine, or storage conventions.  A production client must
+  treat the protocol documented here as a versioned compatibility profile,
+  select it from positive platform evidence, and obtain the application name
+  from the kernel's `firmware_name` sysfs attribute, populated from the device
+  tree `firmware-name` property, rather than compiling `gfenu` into the driver
+  identity.
 - [ ] **Whether a trusted application image is bound to a model or a vendor, and
   who signs it.** The image used here came from the stock OS of the model it
   runs on, and we never tried it anywhere else — another unit of the same model
