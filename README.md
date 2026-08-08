@@ -54,12 +54,13 @@ devices and readying for mainlining into the Linux kernel.
 
 ## Status
 
-**The TEE support for these scanners on Qualcomm SoCs is now done.**
+**TEE support for the reference platform on Qualcomm QSEE is complete.**
 
-This project serves as a proof of concept rather than a complete userspace implementation: what this project
-provides is the protocol, the two kernel drivers needed to reach it on the hardware side and on the TEE side, and a
-reference client that demonstrates the sequence, as the basis for a real
-[`fprintd`](https://fprint.freedesktop.org/) driver.
+The Linux stack contains the two kernel interfaces, a
+machine-wide QSEECOM supplicant and application loader, and a libfprint driver
+used by fprintd and GDM. This repository contains the protocol documentation,
+tracing tools, and command-line hardware test client. The production userspace
+components use separate repositories for independent packaging and review.
 
 - [ ] **REE mode** — the operating system does the imaging itself over SPI. It
   belongs in a separate libfprint image driver, with its kernel interface built by
@@ -85,11 +86,11 @@ reference client that demonstrates the sequence, as the basis for a real
   - [x] [unenrolment](docs/02-ta-protocol.md#removal)
   - [x] [calibration](docs/04-secure-storage.md#calibration-is-generated) —
     generated on-the-fly by `gfenu` itself, nothing to handle
-  - [ ] [lockout policy](docs/05-writing-a-client.md#things-that-will-bite) —
+  - [ ] [lockout policy](docs/07-reference-client.md#limitations) —
     not observed being enforced by the trusted application
   - [ ] [Gatekeeper-signed enrolment auth token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu) —
     Android's signing flow is decoded, but Linux does not yet obtain and submit
-    a signed HAT; the harness currently uses this TA's challenge-only fallback
+    a signed HAT; the harness uses this TA's challenge-only fallback
   - [x] [listing enrolled fingers](docs/04-secure-storage.md#application-index-versus-storage) —
     `ENUMERATE` returns count, group ids, and finger ids
   - [x] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
@@ -137,7 +138,7 @@ reference client that demonstrates the sequence, as the basis for a real
     device
 
 - [x] **A machine-wide QSEECOM supplicant** — implemented in
-  [`supplicant/`](supplicant/); its listener service
+  [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant); its listener service
   [belongs in one machine-wide process](docs/05-writing-a-client.md#where-it-should-live)
   rather than inside the `fprintd` driver, since the kernel allows one receiver
   per device (not per trusted app!) and a second QSEE client handling some other
@@ -150,24 +151,24 @@ reference client that demonstrates the sequence, as the basis for a real
   the independently loaded TA resident, re-registered both listeners, and
   allowed the same operations to complete afterward.
 
-- [x] **A libfprint Goodix QSEE driver** — implemented on branch
-  `goodix-qsee` in the separate libfprint repository. It discovers the
+- [x] **A libfprint Goodix QSEE driver** — implemented on the
+  [`goodix-qsee` branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee)
+  in the separate libfprint repository. It discovers the
   firmware-described misc device, reads the TA name from `firmware_name`, and
   implements initialization, list, enroll, identify/verify, delete, clear,
   cancellation, IRQ draining, matched IDs, and quality feedback. Build and
-  hardware-free protocol/core tests pass. Live libfprint probe, open,
-  initialization, empty enumeration, close, and enrollment cancellation pass;
-  immediate enumeration after cancellation remained empty. fprintd discovers
-  the device and reports the clean user's store through D-Bus. Enrollment,
-  known/unknown-finger identification, matched-ID reporting, and removal still
-  require physical interaction; no template has been committed or removed by
-  these driver tests.
+  hardware-free protocol/core tests pass. Live fprintd tests cover probe,
+  open/close, enumeration, enrollment, duplicate rejection, known-finger
+  verification, matched-ID reporting, per-sample retry feedback, cancellation,
+  and deletion of one print. GDM login and unlock work through a dedicated
+  `pam_fprintd` service. Re-arming the TA control fields before every IRQ drain
+  invocation is required and implemented.
 
 ## What is not understood
 
-This is a proof of concept, and this list is deliberately part of it. None of
-these block the working lifecycle; all of them would matter to a production
-driver.
+The stack is complete for the reference platform. The following items do not
+block its working lifecycle; they define portability and security work that is
+not claimed complete.
 
 What these have in common is that reading or porting the downstream code does
 not settle them. They need a device to test against, a vendor to answer, or
@@ -225,8 +226,9 @@ it to work.
 | **TEE driver** | exposes QSEE trusted applications through Linux's TEE subsystem, so user space can reach them | [`docs/01-kernel-tee-driver.md`](docs/01-kernel-tee-driver.md), branch [`qcom-qseecom-tee`](https://github.com/wrobelda/linux/tree/qcom-qseecom-tee) |
 | **TA protocol** | the command set the Goodix application speaks — undocumented, recovered by tracing the Android stack and reading the vendor's binaries | [`docs/02-ta-protocol.md`](docs/02-ta-protocol.md) |
 | **Listener services** | the file service the application needs the normal world to run: it has no storage of its own and asks for reads and writes of its encrypted data — also undocumented | [`docs/03-listener-services.md`](docs/03-listener-services.md), the stored objects in [`docs/04-secure-storage.md`](docs/04-secure-storage.md) |
-| **Client** | a proof of concept, basis for the real `fprintd`-based client | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md), code in [`harness/`](harness/) |
+| **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) |
 | **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorize enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
+| **Reference client** | command-line hardware and protocol test tool | [`docs/07-reference-client.md`](docs/07-reference-client.md), code in [`harness/`](harness/) |
 
 Read them in order. The TA protocol is meaningless without a listener service
 running, and the listener service cannot be registered without the kernel
@@ -246,22 +248,16 @@ They are independent series and do not depend on each other, but the sequence
 below needs both, plus a device tree node for the sensor — the board support is
 not on either branch.
 
-With that in place:
+With those drivers in place, install and enable
+[`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), enable the
+loader instance named by the device's DT `firmware-name` property, and install
+the [`goodix-qsee` libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee).
+The supplicant must be ready before the loader and biometric clients. See
+[the client lifecycle](docs/05-writing-a-client.md#lifecycle).
 
-    cc -O2 -o gfharness harness/gfharness.c
-
-    # the file service must be running before the application is loaded,
-    # because it asks for its files during initialisation
-    ./gfharness --supp 0 serve &
-    ./gfharness --load gfenu             # kernel fetches gfenu.mdt + .bNN
-
-    ./gfharness --capture 300 --enroll     # 300 seconds; present a finger repeatedly
-    ./gfharness --capture 120 --auth       # 120 seconds; present it again
-    ./gfharness --remove 0x1234abcd
-
-`--supp 0` serves every listener the application uses from one process, which is
-required — the kernel driver keeps [one supplicant queue per
-device](docs/01-kernel-tee-driver.md#one-supplicant-queue-per-device).
+For command-line protocol and hardware testing, build `gfharness` and use
+[the reference-client instructions](docs/07-reference-client.md). Do not run
+its listener mode at the same time as the machine-wide supplicant.
 
 ## Reference platform
 
@@ -304,13 +300,11 @@ Three things stack up here, and they generalise differently:
   on top. The [kernel driver](docs/01-kernel-tee-driver.md) and
   [listener service](docs/03-listener-services.md) documents should apply
   unchanged.
-- **The command set is Goodix-generic.** The command numbering and the
-  enrol / authenticate / remove sequences come from Goodix's own tables and are
-  shared across their trusted applications. The
-  [command protocol](docs/02-ta-protocol.md) and
-  [secure storage](docs/04-secure-storage.md) documents should largely apply,
-  with per-application differences in which commands a given
-  build answers.
+- **The recovered command set is a versioned Goodix compatibility profile.**
+  It is implemented for the positively matched reference platform. Similar
+  Goodix hardware, another TA filename, another OEM, or another TEE does not
+  establish ABI compatibility. Those cases need a separate profile or driver
+  until tested.
 - **What is per-model splits three ways, and each is configured somewhere
   different.**
   - *The sensor hardware* — regulator, reset line, interrupt — is described in
@@ -402,14 +396,14 @@ device should say so.
 | **Keymaster / `km41.mbn`** | the [trusted application that implements Gatekeeper](docs/06-Gatekeeper-protocol.md) on this platform and signs those tokens. It lives in the dedicated `keymaster_a`/`keymaster_b` partition rather than among the dynamically loaded applications in `NON-HLOS.bin` |
 | **`miriskm`** | a separate Xiaomi risk-management trusted application. Its own diagnostics and strings concern device-status, registration-token, certificate and remote-auth operations; it is not Android Gatekeeper |
 
-**The hardware, and the stack this is aimed at**
+**Hardware and Linux fingerprint integration**
 
 | term | meaning |
 |---|---|
 | **sensor driver** | the [kernel driver owning the sensor's supply, reset line and interrupt](docs/00-sensor-driver.md). In TEE mode that is all it does, the trusted application doing the biometrics |
 | **MDT image** | Qualcomm firmware format: one ELF-shaped image split across files. `.mdt` holds the ELF header, program-header table and authentication hash; each `.bNN` holds the payload of program header `NN`. See [the image format](docs/01-kernel-tee-driver.md#what-the-files-are) |
 | **HAL** | hardware abstraction layer, the Android userspace library a vendor ships to drive a device. The one this project replaces is Goodix's fingerprint HAL |
-| **`fprintd` / `libfprint`** | the Linux userspace fingerprint stack this work is ultimately aimed at |
+| **`fprintd` / `libfprint`** | the Linux userspace fingerprint stack used by the implemented Goodix QSEE driver |
 
 ## Licence
 
