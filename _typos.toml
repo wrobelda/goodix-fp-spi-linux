@@ -7,3 +7,8 @@ ernoll = "ernoll"
 # Goodix protocol command names, the harness flag and the libfprint operation
 # are all spelled the American way
 enroll = "enroll"
+
+[default.extend-identifiers]
+# Official Clang/GCC sanitizer names.
+AddressSanitizer = "AddressSanitizer"
+UndefinedBehaviorSanitizer = "UndefinedBehaviorSanitizer"

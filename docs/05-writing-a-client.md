@@ -192,11 +192,11 @@ documented in
 The tested TA accepts a token containing the fresh `PRE_ENROLL` challenge with
 the other fields zero, both before and after provisioning an Android
 lock-screen credential. This makes the reference lifecycle usable on this
-device, with authorization to enrol enforced above the fingerprint protocol. A
+device, with authorisation to enrol enforced above the fingerprint protocol. A
 production client still cannot assume another model or firmware offers the
 same shortcut.
 
-Android uses a signed token, which preserves an authorization boundary in
+Android uses a signed token, which preserves an authorisation boundary in
 secure world rather than relying only on access control around the Linux
 fingerprint service. A production design should use that stronger path where a
 credential service is available; the challenge-only behaviour is a property of

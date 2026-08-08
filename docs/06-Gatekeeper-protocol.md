@@ -25,7 +25,7 @@ handles, KDF parameters, salt, and synthetic-password blobs under `/data`. The
 password handles are authenticated opaque blobs, not plaintext credentials.
 The non-exportable verification and HAT-signing secrets belong to Keymaster in
 secure world. Gatekeeper is also the appropriate layer for secure throttling,
-but this implementation's retry behaviour has not yet been characterized.
+but this implementation's retry behaviour has not yet been characterised.
 Switching boot slots does not erase either Android userdata or the resident
 application's secrets.
 
@@ -85,7 +85,7 @@ A successful verify response was observed as a seven-entry map:
 The returned authenticator type and timestamp are already represented so that
 copying their integer storage into `hw_auth_token_t` produces its required
 big-endian fields. The challenge and IDs occupy the token's little-endian
-fields. Do not apply an additional byte swap without checking the serialized
+fields. Do not apply an additional byte swap without checking the serialised
 bytes.
 
 The password handle observed on this build is 58 bytes. Its secure user id
@@ -131,9 +131,9 @@ synthetic password after its protected blob has been unlocked.
 
 ## Relationship to `gfenu`
 
-The signed HAT is an authorization proof: a trusted credential authority
+The signed HAT is an authorisation proof: a trusted credential authority
 verified a credential and signed a particular fresh challenge. It prevents an
-ordinary caller that can reach the fingerprint protocol from authorizing its
+ordinary caller that can reach the fingerprint protocol from authorising its
 own enrolment merely by requesting a nonce.
 
 This `gfenu` build also accepts a token in which only the fresh challenge is
@@ -144,7 +144,7 @@ creating a template. Gatekeeper provisioning therefore does not toggle
 `gfenu` into a stricter mode.
 
 That permissive behaviour is not a reason to collapse credential handling into
-the fingerprint client. Without a signed token, enrolment authorization ends in
+the fingerprint client. Without a signed token, enrolment authorisation ends in
 normal-world Linux policy. With a signed token, the boundary extends into
 secure world. A production client should request a token from a separate
 credential service when one exists, and should retain the challenge-only route
@@ -165,7 +165,7 @@ The next protocol work is:
 - decode successful enrol, reenrol using keys 5 and 7, and credential deletion
   or reset semantics;
 - verify persistence across reboot and rejection of an incorrect credential;
-- characterize retry, timeout, and secure throttling responses;
+- characterise retry, timeout, and secure throttling responses;
 - convert a live verify response into a canonical HAT and have `gfenu` accept
   it end to end;
 - determine which other trusted applications accept tokens from the same

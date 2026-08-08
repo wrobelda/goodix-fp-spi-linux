@@ -86,7 +86,7 @@ components use separate repositories for independent packaging and review.
   - [x] [unenrolment](docs/02-ta-protocol.md#removal)
   - [x] [calibration](docs/04-secure-storage.md#calibration-is-generated) —
     generated on-the-fly by `gfenu` itself, nothing to handle
-  - [ ] [lockout policy](docs/07-reference-client.md#limitations) —
+  - [ ] [lockout policy](docs/07-reference-client.md#safety) —
     not observed being enforced by the trusted application
   - [ ] [Gatekeeper-signed enrolment auth token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu) —
     Android's signing flow is decoded, but Linux does not yet obtain and submit
@@ -147,18 +147,18 @@ components use separate repositories for independent packaging and review.
   and dispatch reference, while the local daemon supplies the legacy QSEECOM
   transport, confined state root, packaging, reconnect lifecycle, and
   hardware-free tests. On the reference device it replaced `gfharness --supp`
-  for TA initialization and enumeration. Restarting only the supplicant kept
+  for TA initialisation and enumeration. Restarting only the supplicant kept
   the independently loaded TA resident, re-registered both listeners, and
-  allowed the same operations to complete afterward.
+  allowed the same operations to complete afterwards.
 
 - [x] **A libfprint Goodix QSEE driver** — implemented on the
   [`goodix-qsee` branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee)
   in the separate libfprint repository. It discovers the
   firmware-described misc device, reads the TA name from `firmware_name`, and
-  implements initialization, list, enroll, identify/verify, delete, clear,
+  implements initialisation, list, enroll, identify/verify, delete, clear,
   cancellation, IRQ draining, matched IDs, and quality feedback. Build and
   hardware-free protocol/core tests pass. Live fprintd tests cover probe,
-  open/close, enumeration, enrollment, duplicate rejection, known-finger
+  open/close, enumeration, enrolment, duplicate rejection, known-finger
   verification, matched-ID reporting, per-sample retry feedback, cancellation,
   and deletion of one print. GDM login and unlock work through a dedicated
   `pam_fprintd` service. Re-arming the TA control fields before every IRQ drain
@@ -227,7 +227,7 @@ it to work.
 | **TA protocol** | the command set the Goodix application speaks — undocumented, recovered by tracing the Android stack and reading the vendor's binaries | [`docs/02-ta-protocol.md`](docs/02-ta-protocol.md) |
 | **Listener services** | the file service the application needs the normal world to run: it has no storage of its own and asks for reads and writes of its encrypted data — also undocumented | [`docs/03-listener-services.md`](docs/03-listener-services.md), the stored objects in [`docs/04-secure-storage.md`](docs/04-secure-storage.md) |
 | **Client design** | investigation and architecture decisions for the supplicant and libfprint driver | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md) |
-| **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorize enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
+| **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorise enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
 | **Reference client** | command-line hardware and protocol test tool | [`docs/07-reference-client.md`](docs/07-reference-client.md), code in [`harness/`](harness/) |
 | **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/08-production-client-stack.md`](docs/08-production-client-stack.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), branch [`goodix-qsee`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) at [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint) |
 

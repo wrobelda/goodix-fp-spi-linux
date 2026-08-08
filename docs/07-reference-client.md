@@ -37,7 +37,7 @@ modes; the kernel provides one supplicant request queue per TEE device.
 the filename from the sensor device's `firmware_name` sysfs attribute, which is
 populated from the DT `firmware-name` property.
 
-The capture argument is a timeout in seconds. Enrollment requires repeated
+The capture argument is a timeout in seconds. Enrolment requires repeated
 finger placement and removal. Authentication reports the TA status and matched
 group and finger identifiers. Enumeration uses the full 184-byte response so
 the finger-ID array is available.
@@ -50,23 +50,23 @@ handling. Use the standalone
 [`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant) daemon for a
 system installation.
 
-The listener must be registered before loading the TA because initialization
+The listener must be registered before loading the TA because initialisation
 reads stored objects. Do not create empty placeholder objects; the TA treats an
 empty existing object as corrupt rather than missing.
 
 ## Safety
 
-Enrollment and removal modify the active secure-object store. Back up that
+Enrolment and removal modify the active secure-object store. Back up that
 store before destructive tests and obtain approval from its owner. Enumeration,
-initialization, authentication, and cancellation do not add or remove prints.
+initialisation, authentication, and cancellation do not add or remove prints.
 
-The challenge-only enrollment token used by this test client is supported by
-the tested TA but has a weaker authorization boundary than a Gatekeeper-signed
+The challenge-only enrolment token used by this test client is supported by
+the tested TA but has a weaker authorisation boundary than a Gatekeeper-signed
 HAT. See the [Gatekeeper protocol](06-Gatekeeper-protocol.md).
 
 ## Tracing
 
 [`tracing/README.md`](../tracing/README.md) documents the Frida scripts used to
-capture the Android HAL and `qseecomd` behavior. The command-channel hook can
+capture the Android HAL and `qseecomd` behaviour. The command-channel hook can
 truncate large payload dumps; use the documented payload hooks when exact
 buffer contents are required.

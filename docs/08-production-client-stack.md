@@ -48,9 +48,9 @@ embedded-NUL ambiguity, symlink traversal, and non-regular GPFS objects are
 rejected.  The daemon keeps directory descriptors rather than changing its
 working directory.
 
-GPFS writes are serialized.  A complete offset-zero write is staged in the
+GPFS writes are serialised.  A complete offset-zero write is staged in the
 destination directory, synced, optionally backed up, atomically renamed, and
-followed by a directory sync.  Partial offset writes are serialized and synced
+followed by a directory sync.  Partial offset writes are serialised and synced
 but cannot be made atomically without changing the listener ABI.  Objects and
 directories default to modes 0600 and 0700.  The service never creates empty
 placeholder objects.
@@ -95,10 +95,10 @@ as protocol compatibility.
 The driver does not register listeners and does not need `/dev/teeprivN`.
 `qsee-app-loader` performs the privileged TA load; the driver then opens an
 unprivileged client session through `/dev/teeN`. Access to the sensor and TA is
-serialized by libfprint's action model and an internal operation state;
+serialised by libfprint's action model and an internal operation state;
 cancellation sends `CANCEL` before completing the cancelled action.
 
-The driver is match-on-chip.  A serialized `FpPrint` contains only a versioned
+The driver is match-on-chip.  A serialised `FpPrint` contains only a versioned
 locator:
 
 ```
@@ -109,15 +109,15 @@ The runtime TA name is part of the device identity, not each print locator.  A
 profile number identifies the positively matched command/layout ABI.  The
 record contains no image or portable template.  The configured state directory is
 a self-contained set of sealed fingerprint objects.  `gfenu` reconstructs its
-enrollment list from those files and exposes it through `ENUMERATE`; the TA has
-no separate persistent enrollment database.  fprintd metadata is authoritative
+enrolment list from those files and exposes it through `ENUMERATE`; the TA has
+no separate persistent enrolment database.  fprintd metadata is authoritative
 for the prints managed through this stack, and its normal reconciliation and
 orphan-cleanup policy applies.  Deletion is performed through the `gfenu`
 protocol, never by editing opaque objects directly.  A successful identify uses
 the matched group and finger id from the drained IRQ payload to select the
 gallery entry.
 
-There is no enrollment-import, cross-environment migration, or
+There is no enrolment-import, cross-environment migration, or
 orphan-preservation feature in this design.
 
 Group 0 is the initial device policy.  The group is present in every locator so
@@ -126,13 +126,13 @@ Secure-object filenames are deliberately absent from the print record: slot
 filenames are a private TA/storage implementation detail and are not finger
 ids.
 
-### Enrollment authorization
+### Enrolment authorisation
 
-The driver asks an enrollment-token provider for exactly 69 bytes after
+The driver asks an enrolment-token provider for exactly 69 bytes after
 `PRE_ENROLL`.  A provider receives the fresh challenge and returns a packed
 `hw_auth_token_t`; it does not receive sensor data. The reference-platform
 provider constructs the device-specific challenge-only token. This fallback
-has a weaker normal-world authorization boundary.
+has a weaker normal-world authorisation boundary.
 
 A future credential service can implement the same boundary and return a
 Gatekeeper-signed HAT.  PIN handling, Keymaster CBOR, synthetic-password state,
@@ -184,7 +184,7 @@ supplicant are separate failure domains: restarting the supplicant must
 re-register listeners and resume service for a previously loaded TA without
 unloading it. This was
 verified on the reference device by retaining the loader PID, restarting only
-the supplicant, and then completing `gfenu` initialization and enumeration.
+the supplicant, and then completing `gfenu` initialisation and enumeration.
 A separate direct-REE Goodix driver has no supplicant dependency.  On a recoverable TEE
 device loss the daemon closes every listener/session and retries discovery and
 registration with bounded exponential backoff.  SIGTERM/SIGINT stop receiving,
@@ -243,15 +243,15 @@ or SSH authentication stacks.
 ## Tests on the reference platform
 
 The standalone supplicant and loader replace the harness listener and loader.
-The following behavior has been tested on the Xiaomi Pad 5 Pro 5G:
+The following behaviour has been tested on the Xiaomi Pad 5 Pro 5G:
 
 - restart the supplicant while `gfenu` stays loaded, re-register both
-  listeners, and continue TA initialization and enumeration;
-- libfprint probe, open, initialization, close, and cancellation;
-- fprintd enumeration, enrollment, duplicate rejection, known-finger
+  listeners, and continue TA initialisation and enumeration;
+- libfprint probe, open, initialisation, close, and cancellation;
+- fprintd enumeration, enrolment, duplicate rejection, known-finger
   verification, matched finger-ID reporting, and deletion of one print;
 - finger-present and finger-removed events;
-- per-sample enrollment retry and quality feedback;
+- per-sample enrolment retry and quality feedback;
 - GDM login and GNOME session unlock through `pam_fprintd`.
 
 The TA overwrites control fields in every IRQ response. The driver writes the
@@ -318,7 +318,7 @@ The intended lifecycle is:
 3. Libfprint creates the logical fingerprint device only while both the Goodix
    sensor device and its named TA device are present.
 4. TA removal removes the libfprint device. Reappearance constructs a new
-   device and repeats initialization from the beginning. fprintd already
+   device and repeats initialisation from the beginning. fprintd already
    exports and removes its D-Bus device when libfprint emits `device-added` and
    `device-removed`.
 
@@ -349,7 +349,7 @@ after this sequence succeeds.
 
 ## Remaining limitation
 
-Enrollment uses the reference platform's challenge-only 69-byte HAT provider.
+Enrolment uses the reference platform's challenge-only 69-byte HAT provider.
 The driver exposes a replaceable token-provider boundary that can accept a
 complete Gatekeeper-signed HAT from a separate credential service. Signed HAT
 support is not implemented. PIN handling, Keymaster requests, and
