@@ -68,7 +68,7 @@ open device lifetime:
 * the netlink IRQ subscription and IRQ-drain state.
 
 The TA name is mandatory runtime device data.  `gfenu` is the value on the
-reference device, not the libfprint driver name or a fallback assumed for other
+reference platform, not the libfprint driver name or a fallback assumed for other
 devices.
 
 Sensor power/reset/IRQ operations live behind a sensor-I/O interface rather
@@ -88,10 +88,12 @@ The driver is match-on-chip.  A serialized `FpPrint` contains only a versioned
 locator:
 
 ```
-version = 1, TA name, group id, Goodix finger id
+protocol profile = 1, group id, Goodix finger id
 ```
 
-It contains no image or portable template.  The configured state directory is
+The runtime TA name is part of the device identity, not each print locator.  A
+profile number identifies the positively matched command/layout ABI.  The
+record contains no image or portable template.  The configured state directory is
 a self-contained set of sealed fingerprint objects.  `gfenu` reconstructs its
 enrollment list from those files and exposes it through `ENUMERATE`; the TA has
 no separate persistent enrollment database.  fprintd metadata is authoritative

@@ -62,7 +62,8 @@ reference client that demonstrates the sequence, as the basis for a real
 [`fprintd`](https://fprint.freedesktop.org/) driver.
 
 - [ ] **REE mode** — the operating system does the imaging itself over SPI. It
-  can be added to the sensor driver by [porting](docs/00-sensor-driver.md#normal-world-imaging-ree)
+  belongs in a separate libfprint image driver, with its kernel interface built by
+  [porting](docs/00-sensor-driver.md#normal-world-imaging-ree)
   the SPI transfer and image scanning code from the MediaTek-lineage `gf_spi_tee.c`, where it sits behind
   `SUPPORT_REE_SPI`
 - [x] **TEE mode on Qualcomm** — reaching the trusted application over
@@ -71,13 +72,13 @@ reference client that demonstrates the sequence, as the basis for a real
   - [x] [unloading the application](docs/01-kernel-tee-driver.md#application-lifetime)
   - [x] [persistence across reboot](docs/04-secure-storage.md#the-file-set) —
     QSEE-sealed objects, stored through the [listener services](docs/03-listener-services.md)
-- [ ] **TEE mode on MediaTek** — the protocol and the sensor driver carry
-  over; the missing half is a MicroTrust backend in `drivers/tee/`, where
-  MediaTek platforms that reach a TEE upstream do so through OP-TEE. Requires
-  reverse-engineering
-- [x] **The [trusted application's protocol](docs/02-ta-protocol.md)** —
-  Goodix-generic rather than Qualcomm's, so these should carry over to a
-  MediaTek port:
+- [ ] **TEE mode on MediaTek** — a related kernel driver exists, but neither TA
+  ABI compatibility nor the userspace/session boundary is established.  Treat
+  it as a separate libfprint driver unless evidence shows that a versioned
+  protocol profile can be shared. Requires reverse-engineering
+- [x] **The reference platform's [trusted-application protocol](docs/02-ta-protocol.md)** —
+  recovered for one versioned Goodix QSEE profile; portability to other OEMs,
+  parts, application names, or TEEs is not established:
   - [x] [enrolment, first finger](docs/02-ta-protocol.md#enrolment)
   - [x] [enrolment, additional fingers](docs/04-secure-storage.md#lifecycle-observed)
   - [x] [authentication (match and reject)](docs/02-ta-protocol.md#authentication)
@@ -135,17 +136,25 @@ reference client that demonstrates the sequence, as the basis for a real
     in-kernel ones included — which decides who may be granted the privileged
     device
 
-- [ ] **A QSEECOM supplicant** — the listener service
+- [x] **A machine-wide QSEECOM supplicant** — implemented in
+  [`supplicant/`](supplicant/); its listener service
   [belongs in one machine-wide process](docs/05-writing-a-client.md#where-it-should-live)
   rather than inside the `fprintd` driver, since the kernel allows one receiver
   per device (not per trusted app!) and a second QSEE client handling some other
   type of app could not register a handler of its own. Qualcomm's
-  [`minkipc`](https://github.com/qualcomm/minkipc) is the closest source-level
-  reference: it publishes the same FS, GPFS, time and RPMB services, but their
-  registration is tied to QTEE's Mink object transport. Whether to give those
-  handlers a QSEECOM transport in that project or carry a separate daemon,
-  whether it also loads applications, and whether the time listener is answered
-  in the kernel are all open.
+  [`minkipc`](https://github.com/qualcomm/minkipc) is the source-level protocol
+  and dispatch reference, while the local daemon supplies the legacy QSEECOM
+  transport, confined state root, packaging, reconnect lifecycle, and
+  hardware-free tests. Live replacement of `gfharness --supp` remains pending
+  device connectivity.
+
+- [x] **A libfprint Goodix QSEE driver** — implemented on branch
+  `goodix-qsee` in the separate libfprint repository. It discovers the
+  firmware-described misc device, reads the TA name from `firmware_name`, and
+  implements initialization, list, enroll, identify/verify, delete, clear,
+  cancellation, IRQ draining, matched IDs, and quality feedback. Build and
+  hardware-free protocol/core tests pass; live libfprint/fprintd validation is
+  still pending device connectivity and no destructive test has been run.
 
 ## What is not understood
 
@@ -172,7 +181,7 @@ evidence from outside this project entirely.
   exercised ([[our device]](#how-we-know)). Unexercised paths, and other firmware versions, are
   not covered by that.
 - [ ] **How broadly the recovered trusted-application ABI applies.** `gfenu` is
-  the filename supplied by this device's firmware description, not a known
+  the filename supplied by the reference platform's firmware description, not a known
   cross-device Goodix protocol name.  We do not know whether another OEM's
   Goodix application, another sensor generation, or a Goodix application on a
   MediaTek or newer Qualcomm TEE uses the same command numbers, payload layouts,
