@@ -145,16 +145,23 @@ reference client that demonstrates the sequence, as the basis for a real
   [`minkipc`](https://github.com/qualcomm/minkipc) is the source-level protocol
   and dispatch reference, while the local daemon supplies the legacy QSEECOM
   transport, confined state root, packaging, reconnect lifecycle, and
-  hardware-free tests. Live replacement of `gfharness --supp` remains pending
-  device connectivity.
+  hardware-free tests. On the reference device it replaced `gfharness --supp`
+  for TA initialization and enumeration. Restarting only the supplicant kept
+  the independently loaded TA resident, re-registered both listeners, and
+  allowed the same operations to complete afterward.
 
 - [x] **A libfprint Goodix QSEE driver** — implemented on branch
   `goodix-qsee` in the separate libfprint repository. It discovers the
   firmware-described misc device, reads the TA name from `firmware_name`, and
   implements initialization, list, enroll, identify/verify, delete, clear,
   cancellation, IRQ draining, matched IDs, and quality feedback. Build and
-  hardware-free protocol/core tests pass; live libfprint/fprintd validation is
-  still pending device connectivity and no destructive test has been run.
+  hardware-free protocol/core tests pass. Live libfprint probe, open,
+  initialization, empty enumeration, close, and enrollment cancellation pass;
+  immediate enumeration after cancellation remained empty. fprintd discovers
+  the device and reports the clean user's store through D-Bus. Enrollment,
+  known/unknown-finger identification, matched-ID reporting, and removal still
+  require physical interaction; no template has been committed or removed by
+  these driver tests.
 
 ## What is not understood
 
