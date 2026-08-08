@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+name="QSEE supplicant"
+description="Machine-wide Qualcomm TEE listener supplicant"
+command="/usr/sbin/qsee-supplicant"
+command_args="--state-dir /var/lib/qsee-supplicant"
+command_background=true
+pidfile="/run/qsee-supplicant.pid"
+output_log="/var/log/qsee-supplicant.log"
+error_log="/var/log/qsee-supplicant.log"
+
+depend() {
+	need localmount
+	before fprintd
+}
+
+start_pre() {
+	checkpath --directory --mode 0700 /var/lib/qsee-supplicant
+}
