@@ -105,10 +105,6 @@ components use separate repositories for independent packaging and review.
   board power and pins
 - [ ] **Upstreaming the kernel side** — both drivers build and run, but neither
   has been posted. These have to be settled with the maintainers first:
-  - [ ] [`qcom-scm-blocked-listener-warn`](https://github.com/wrobelda/linux/tree/qcom-scm-blocked-listener-warn) —
-    two `WARN_ON()`s in `qcom_scm_qseecom_call()` that no in-kernel caller can
-    reach but an ordinary invoke can, so `panic_on_warn` turns them into a
-    denial of service. A standalone patch the TEE series depends on
   - [ ] **`TEE_IMPL_ID_QSEECOM = 5` is new uapi** — a client tells this driver
     from [`qcomtee`](docs/01-kernel-tee-driver.md#why-this-driver) by reading it
     from `TEE_IOC_VERSION`, so the number is ABI and needs the TEE maintainer's

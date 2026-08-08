@@ -114,11 +114,13 @@ and lookup at 3. With `gfenu` resident and a load returning `-EINVAL`, owner 50
 / service 1 / command 2 with the application id returned success and echoed the
 id back, and the next load succeeded ([[our device]](../README.md#how-we-know)).
 
-### Four defects on paths that were already there
+### Five defects on paths that were already there
 
 Reached for the first time by driving an application from user space, rather
 than introduced by it:
 
+- an incomplete or blocked call raised `WARN()`, which means kernel bug and
+  neither is one; with `panic_on_warn` either takes the machine down;
 - the listener id arrives from the secure world as a `u64` and selects which
   registered service handles a request; it was being narrowed;
 - `qcom_scm_qseecom_app_load()` documented that the image must come from a TZ
@@ -132,11 +134,6 @@ than introduced by it:
 - two error paths abandoned a request without reporting it, including one whose
   return value was dropped entirely, so a failure to deliver the give-up answer
   left exactly the wedge that answer exists to prevent.
-
-One further fix is deliberately not in this series: two `WARN_ON()`s in
-`qcom_scm_qseecom_call()` are unreachable from in-kernel callers but become
-reachable from an ordinary invoke, where `panic_on_warn` turns them into a
-denial of service. It is a standalone patch, since it stands on its own merits.
 
 ## Devices
 
