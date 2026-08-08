@@ -1,0 +1,2 @@
+# Start the QSEE trusted-application loader paired with this sensor by DT.
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="goodix_fp", TEST=="device/firmware_name", TAG+="systemd", PROGRAM="/usr/bin/systemd-escape --template=qsee-app-loader@.service $attr{device/firmware_name}", ENV{SYSTEMD_WANTS}+="%c"

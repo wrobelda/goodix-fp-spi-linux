@@ -92,10 +92,11 @@ its TA or sensor ABI differs; it may reuse operation mapping and codec code only
 where compatibility is established.  Similar hardware branding is not treated
 as protocol compatibility.
 
-The driver does not register listeners and does not need `/dev/teeprivN`.  Startup
-ordering makes the external supplicant a prerequisite.  Access to the sensor
-and TA is serialized by libfprint's action model and an internal operation
-state; cancellation sends `CANCEL` before completing the cancelled action.
+The driver does not register listeners and does not need `/dev/teeprivN`.
+`qsee-app-loader` performs the privileged TA load; the driver then opens an
+unprivileged client session through `/dev/teeN`. Access to the sensor and TA is
+serialized by libfprint's action model and an internal operation state;
+cancellation sends `CANCEL` before completing the cancelled action.
 
 The driver is match-on-chip.  A serialized `FpPrint` contains only a versioned
 locator:
@@ -175,11 +176,13 @@ separate libfprint driver scope.
 
 ## Lifecycle
 
-The service manager creates configured state directories, starts required
-supplicant transports before application-loader instances and their clients,
-and treats service registration as readiness.  The loader and supplicant are
-separate failure domains: restarting the supplicant must re-register listeners
-and resume service for a previously loaded TA without unloading it.  This was
+The service manager creates configured state directories and starts the
+supplicant before application-loader instances. The loader unit uses `Wants=`
+rather than `Requires=` for this relationship: a supplicant failure must not
+stop loader processes or discard their TA references. The loader and
+supplicant are separate failure domains: restarting the supplicant must
+re-register listeners and resume service for a previously loaded TA without
+unloading it. This was
 verified on the reference device by retaining the loader PID, restarting only
 the supplicant, and then completing `gfenu` initialization and enumeration.
 A separate direct-REE Goodix driver has no supplicant dependency.  On a recoverable TEE
@@ -222,7 +225,7 @@ DeviceAllow=/dev/goodix_fp rw
 DeviceAllow=char-tee rw
 ```
 
-On Alpine, install a separate `/etc/pam.d/gdm-fingerprint` service because the
+On Alpine/pmOS, install a separate `/etc/pam.d/gdm-fingerprint` service because the
 `fprintd-pam` package installs the module without enabling it for GDM:
 
 ```pam
@@ -266,6 +269,83 @@ tests are not run in GitHub-hosted CI.
 The libfprint Goodix protocol test and core `fpi-device` test pass with the
 driver enabled. Live hardware tests require the reference platform and physical
 finger input.
+
+## TA loader activation
+
+The hardware-integration package installs
+[`60-goodix-qsee.rules`](../udev/60-goodix-qsee.rules). When the kernel creates
+the `goodix_fp` misc device, udev reads the trusted application (TA) name from
+the sensor's `firmware_name` sysfs attribute. It escapes that name as a systemd
+instance identifier and starts the corresponding
+`qsee-app-loader@.service` instance. For example, `gfenu` starts
+`qsee-app-loader@gfenu.service`.
+
+This removes the need to enable a loader instance for each board. The rule is
+part of the Goodix hardware integration rather than libfprint or
+qsee-supplicant because it defines how this kernel sensor device is paired with
+its TA.
+
+Install and activate the rule with:
+
+```sh
+make -C udev check
+sudo make -C udev install
+sudo udevadm control --reload
+sudo udevadm trigger --action=add --subsystem-match=misc --sysname-match=goodix_fp
+```
+
+`SYSTEMD_WANTS` starts the loader when the device first becomes active. The
+loader is not stopped when qsee-supplicant restarts; it retains the loaded TA
+reference while the supplicant re-registers its listener services.
+
+This was verified on the reference device with the loader instance disabled
+and stopped. Triggering an add event for `goodix_fp` set
+`SYSTEMD_WANTS=qsee-app-loader@gfenu.service`; systemd started the instance and
+the loader reported `event=application_loaded app=gfenu`.
+
+## TODO: TA availability and device lifecycle
+
+Automatic loader selection is implemented, but the kernel does not yet report
+whether the named TA is loaded and available to libfprint.
+
+The intended lifecycle is:
+
+1. The loader attaches to an already resident TA or performs the privileged
+   load, then reports readiness.
+2. The QSEECOM driver exposes the loaded TA as a kernel device and emits udev
+   add/remove events when the application's reference count changes between
+   zero and nonzero.
+3. Libfprint creates the logical fingerprint device only while both the Goodix
+   sensor device and its named TA device are present.
+4. TA removal removes the libfprint device. Reappearance constructs a new
+   device and repeats initialization from the beginning. fprintd already
+   exports and removes its D-Bus device when libfprint emits `device-added` and
+   `device-removed`.
+
+The Linux TEE core already has a `tee` bus for discoverable TEE client devices.
+OP-TEE obtains a list of advertised device TAs from its enumeration pseudo-TA,
+registers devices named `optee-ta-<UUID>` on that bus, and emits
+`MODALIAS=tee:<UUID>`. This is the closest existing kernel convention, but it
+does not describe the live loaded-session set. Mainline QTEE does not currently
+register loaded applications or objects as `tee` bus devices. QSEECOM identifies
+applications by name rather than UUID, so the kernel design must define how a
+name-addressed QSEECOM application is represented on the existing `tee` bus
+before introducing a separate sysfs class.
+
+Libfprint's udev backend also needs dynamic monitoring. The merged
+[udev device support](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/260)
+performs initial enumeration and supports composite resources such as SPI plus
+HID, but it does not process later udev add/remove events. The open
+[removal cleanup change](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/435)
+and [USB reconnect proposal](https://gitlab.freedesktop.org/libfprint/libfprint/-/work_items/852)
+do not add that support.
+
+The loader needs an attach-or-load startup path. If another client still holds
+a session after a loader crash, QSEE rejects a second privileged load because
+the TA remains resident. The restarted loader must first try an unprivileged
+session, load only when the TA is absent, and retry the unprivileged attach if
+another process wins the load race. The systemd unit must report readiness only
+after this sequence succeeds.
 
 ## Remaining limitation
 

@@ -229,7 +229,7 @@ it to work.
 | **Client design** | investigation and architecture decisions for the supplicant and libfprint driver | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md) |
 | **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorize enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
 | **Reference client** | command-line hardware and protocol test tool | [`docs/07-reference-client.md`](docs/07-reference-client.md), code in [`harness/`](harness/) |
-| **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/08-production-client-stack.md`](docs/08-production-client-stack.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) |
+| **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/08-production-client-stack.md`](docs/08-production-client-stack.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), branch [`goodix-qsee`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) at [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint) |
 
 Read them in order. The TA protocol is meaningless without a listener service
 running, and the listener service cannot be registered without the kernel
@@ -250,9 +250,11 @@ below needs both, plus a device tree node for the sensor — the board support i
 not on either branch.
 
 With those drivers in place, install and enable
-[`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), enable the
-loader instance named by the device's DT `firmware-name` property, and install
-the [`goodix-qsee` libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee).
+[`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), install the
+[hardware udev rule](udev/60-goodix-qsee.rules), and install the [`goodix-qsee`
+libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee). The
+udev rule reads the trusted-application name from the sensor and starts the
+matching application-loader instance automatically.
 The supplicant must be ready before the loader and biometric clients. See
 [the production client lifecycle](docs/08-production-client-stack.md#lifecycle).
 
