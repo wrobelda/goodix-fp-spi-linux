@@ -139,7 +139,7 @@ components use separate repositories for independent packaging and review.
 
 - [x] **A machine-wide QSEECOM supplicant** — implemented in
   [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant); its listener service
-  [belongs in one machine-wide process](docs/05-writing-a-client.md#where-it-should-live)
+  [belongs in one machine-wide process](docs/05-writing-a-client.md#supplicant-design-decision)
   rather than inside the `fprintd` driver, since the kernel allows one receiver
   per device (not per trusted app!) and a second QSEE client handling some other
   type of app could not register a handler of its own. Qualcomm's
@@ -217,7 +217,7 @@ evidence from outside this project entirely.
 
 ## What is where
 
-Six pieces, each independently useful; the first four had to exist for any of
+Eight pieces, each independently useful; the first four had to exist for any of
 it to work.
 
 | layer | what it does | where |
@@ -226,9 +226,10 @@ it to work.
 | **TEE driver** | exposes QSEE trusted applications through Linux's TEE subsystem, so user space can reach them | [`docs/01-kernel-tee-driver.md`](docs/01-kernel-tee-driver.md), branch [`qcom-qseecom-tee`](https://github.com/wrobelda/linux/tree/qcom-qseecom-tee) |
 | **TA protocol** | the command set the Goodix application speaks — undocumented, recovered by tracing the Android stack and reading the vendor's binaries | [`docs/02-ta-protocol.md`](docs/02-ta-protocol.md) |
 | **Listener services** | the file service the application needs the normal world to run: it has no storage of its own and asks for reads and writes of its encrypted data — also undocumented | [`docs/03-listener-services.md`](docs/03-listener-services.md), the stored objects in [`docs/04-secure-storage.md`](docs/04-secure-storage.md) |
-| **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) |
+| **Client design** | investigation and architecture decisions for the supplicant and libfprint driver | [`docs/05-writing-a-client.md`](docs/05-writing-a-client.md) |
 | **Gatekeeper** | the separate hardware-backed credential verifier Android uses to authorize enrolment with a signed token | [`docs/06-Gatekeeper-protocol.md`](docs/06-Gatekeeper-protocol.md) |
 | **Reference client** | command-line hardware and protocol test tool | [`docs/07-reference-client.md`](docs/07-reference-client.md), code in [`harness/`](harness/) |
+| **Production userspace** | machine-wide listeners and TA loading plus the fprintd/libfprint match-on-chip client | [`docs/08-production-client-stack.md`](docs/08-production-client-stack.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) |
 
 Read them in order. The TA protocol is meaningless without a listener service
 running, and the listener service cannot be registered without the kernel
@@ -253,7 +254,7 @@ With those drivers in place, install and enable
 loader instance named by the device's DT `firmware-name` property, and install
 the [`goodix-qsee` libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee).
 The supplicant must be ready before the loader and biometric clients. See
-[the client lifecycle](docs/05-writing-a-client.md#lifecycle).
+[the production client lifecycle](docs/08-production-client-stack.md#lifecycle).
 
 For command-line protocol and hardware testing, build `gfharness` and use
 [the reference-client instructions](docs/07-reference-client.md). Do not run

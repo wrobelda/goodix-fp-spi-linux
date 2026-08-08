@@ -3,8 +3,10 @@
 `harness/gfharness.c` is a command-line implementation of the documented
 sensor and trusted-application protocols. It is used for protocol testing,
 hardware diagnostics, and comparison with vendor traces. Production services
-do not link to or execute it. See [05-writing-a-client.md](05-writing-a-client.md)
-for the libfprint driver and machine-wide supplicant design.
+do not link to or execute it. See the
+[client design investigation](05-writing-a-client.md) and
+[production client stack](08-production-client-stack.md) for the libfprint
+driver and machine-wide supplicant.
 
 ## Build
 
@@ -60,7 +62,7 @@ initialization, authentication, and cancellation do not add or remove prints.
 
 The challenge-only enrollment token used by this test client is supported by
 the tested TA but has a weaker authorization boundary than a Gatekeeper-signed
-HAT. See [06-Gatekeeper-protocol.md](06-Gatekeeper-protocol.md).
+HAT. See the [Gatekeeper protocol](06-Gatekeeper-protocol.md).
 
 ## Tracing
 
