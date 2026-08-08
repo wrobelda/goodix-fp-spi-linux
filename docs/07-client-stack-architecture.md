@@ -25,8 +25,9 @@ and publish its own service set.  Services are capabilities selected by
 configuration, not fingerprint-specific assumptions.
 
 The daemon is application agnostic.  It does not load `gfenu`, open the sensor,
-or implement fingerprint policy.  A client or service manager may load a TA
-only after the supplicant is ready.
+or implement fingerprint policy.  The generic, separately supervised
+`qsee-app-loader@.service` may load a configured TA only after the supplicant is
+ready and hold its load session independently.
 
 All protocol paths are untrusted input.  They are resolved beneath a configured
 state directory and Android absolute paths are treated as names within that
@@ -167,8 +168,13 @@ libfprint discovery extension.
 ## Lifecycle
 
 The service manager creates configured state directories, starts required
-supplicant transports before their clients, and treats service registration as
-readiness.  A separate direct-REE Goodix driver has no supplicant dependency.  On a recoverable TEE
+supplicant transports before application-loader instances and their clients,
+and treats service registration as readiness.  The loader and supplicant are
+separate failure domains: restarting the supplicant must re-register listeners
+and resume service for a previously loaded TA without unloading it.  This was
+verified on the reference device by retaining the loader PID, restarting only
+the supplicant, and then completing `gfenu` initialization and enumeration.
+A separate direct-REE Goodix driver has no supplicant dependency.  On a recoverable TEE
 device loss the daemon closes every listener/session and retries discovery and
 registration with bounded exponential backoff.  SIGTERM/SIGINT stop receiving,
 close the privileged descriptor (unregistering listeners), sync outstanding

@@ -37,13 +37,13 @@ Directories and objects are created 0700 and 0600.  Do not pre-create empty
 objects: `gfenu` treats a present empty object as corrupt rather than absent.
 Back up the entire state directory only as sensitive, device-bound data.
 
-The systemd unit uses a dedicated account, grants only the `CAP_SYS_ADMIN`
-required by the current QSEECOM kernel driver, and confines filesystem and
-network access.  Create the `qsee-supplicant` system user/group when packaging.
-The OpenRC example runs as root because portable file capabilities and device
-ACL setup are distribution-specific; downstream packaging should instead give
-a dedicated account access to the state directory and TEE node plus the needed
-capability.
+The supplied systemd and OpenRC units run as root.  The current kernel both
+requires `CAP_SYS_ADMIN` and normally creates `/dev/teeprivN` mode 0600 owned by
+root, so merely assigning the capability to a dedicated account is not enough.
+The systemd unit bounds capabilities to `CAP_SYS_ADMIN` and confines filesystem,
+network, and kernel access.  A downstream may use a dedicated account only when
+its udev and LSM policy also grants that account access to the TEE node and state
+directory.
 
 ## Lifecycle
 
@@ -56,3 +56,12 @@ listeners, and exits cleanly.  Service managers should restart a failed daemon.
 
 Only one legacy-QSEECOM supplicant may serve a TEE device.  Do not run the
 harness `--supp` mode at the same time.
+
+Dynamic trusted applications need an independent load reference.  Enable the
+generic loader instance named by the device's firmware description, for example
+`qsee-app-loader@gfenu.service` on the reference platform.  The loader starts
+after the supplicant, asks the kernel to load `%i` from firmware, and holds that
+session until shutdown.  It deliberately runs as a separate process: a
+supplicant crash and restart re-registers listeners without unloading an
+already resident application.  Clients read the application name from their
+device's `firmware_name` sysfs attribute; neither daemon assumes `gfenu`.

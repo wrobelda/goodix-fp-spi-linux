@@ -1,17 +1,15 @@
 [Unit]
-Description=Machine-wide Qualcomm TEE supplicant
+Description=Hold Qualcomm TEE application %i loaded
 Documentation=file:///usr/share/doc/qsee-supplicant/README.md
+Requires=qsee-supplicant.service
+After=qsee-supplicant.service
 Before=fprintd.service
-After=systemd-udev-settle.service
 
 [Service]
 Type=simple
-StateDirectory=qsee-supplicant
-StateDirectoryMode=0700
-ExecStart=/usr/sbin/qsee-supplicant --state-dir /var/lib/qsee-supplicant
+ExecStart=/usr/sbin/qsee-app-loader %i
 Restart=on-failure
 RestartSec=2s
-AmbientCapabilities=CAP_SYS_ADMIN
 CapabilityBoundingSet=CAP_SYS_ADMIN
 NoNewPrivileges=yes
 PrivateDevices=no
