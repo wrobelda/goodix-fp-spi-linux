@@ -303,6 +303,17 @@ and stopped. Triggering an add event for `goodix_fp` set
 `SYSTEMD_WANTS=qsee-app-loader@gfenu.service`; systemd started the instance and
 the loader reported `event=application_loaded app=gfenu`.
 
+At startup the loader first opens an unprivileged session to the named TA. An
+`ENOENT` result means that the TA is absent, so the loader performs the
+privileged load. QSEE reports a concurrent duplicate load as `EINVAL`; in that
+case the loader retries the unprivileged session. It reports readiness only
+after either the attachment or load succeeds.
+
+The restart path was verified while another session kept `gfenu` resident. The
+restarted loader reported `event=application_attached app=gfenu` and retained
+the new session after the other holder exited. The absent-TA path was tested
+separately and reported `event=application_loaded app=gfenu`.
+
 ## TODO: TA availability and device lifecycle
 
 Automatic loader selection is implemented, but the kernel does not yet report
@@ -339,13 +350,6 @@ HID, but it does not process later udev add/remove events. The open
 [removal cleanup change](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/435)
 and [USB reconnect proposal](https://gitlab.freedesktop.org/libfprint/libfprint/-/work_items/852)
 do not add that support.
-
-The loader needs an attach-or-load startup path. If another client still holds
-a session after a loader crash, QSEE rejects a second privileged load because
-the TA remains resident. The restarted loader must first try an unprivileged
-session, load only when the TA is absent, and retry the unprivileged attach if
-another process wins the load race. The systemd unit must report readiness only
-after this sequence succeeds.
 
 ## Remaining limitation
 
