@@ -56,41 +56,47 @@ devices and readying for mainlining into the Linux kernel.
 
 **TEE support for the reference platform on Qualcomm QSEE is complete.**
 
-The Linux stack contains the two kernel interfaces, a
-machine-wide QSEECOM supplicant and application loader, and a libfprint driver
-used by fprintd and GDM. This repository contains the protocol documentation,
-tracing tools, and command-line hardware test client. The production userspace
-components use separate repositories for independent packaging and review.
+The Linux stack contains:
 
-- [ ] **REE mode** — the operating system does the imaging itself over SPI. It
-  belongs in a separate libfprint image driver, with its kernel interface built by
-  [porting](docs/00-sensor-driver.md#normal-world-imaging-ree)
-  the SPI transfer and image scanning code from the MediaTek-lineage `gf_spi_tee.c`, where it sits behind
-  `SUPPORT_REE_SPI`
-- [x] **TEE mode on Qualcomm** — reaching the trusted application over
-  QSEECOM; everything documented here was exercised in this mode:
+- the two kernel interfaces,
+- a machine-wide QSEECOM supplicant and application loader,
+- a libfprint driver used by fprintd and GDM.
+
+This repository contains the protocol documentation, tracing tools, and
+command-line hardware test client. The production userspace components use
+separate repositories, so they can be packaged and reviewed independently.
+
+- [ ] **REE mode** — the operating system does the imaging itself over SPI.
+  This mode belongs in a separate libfprint image driver. Its kernel interface
+  would be built by
+  [porting](docs/00-sensor-driver.md#normal-world-imaging-ree) the SPI
+  transfer and image scanning code from the MediaTek-lineage `gf_spi_tee.c`,
+  where that code sits behind `SUPPORT_REE_SPI`
+- [x] **TEE mode on Qualcomm** — the client reaches the trusted application
+  over QSEECOM. Everything documented here was exercised in this mode:
   - [x] [load and talk to the trusted application](docs/01-kernel-tee-driver.md#loading-an-application)
   - [x] [unloading the application](docs/01-kernel-tee-driver.md#application-lifetime)
   - [x] [persistence across reboot](docs/04-secure-storage.md#the-file-set) —
     QSEE-sealed objects, stored through the [listener services](docs/03-listener-services.md)
-- [ ] **TEE mode on MediaTek** — a related kernel driver exists, but neither TA
-  ABI compatibility nor the userspace/session boundary is established.  Treat
-  it as a separate libfprint driver unless evidence shows that a versioned
-  protocol profile can be shared. Requires reverse-engineering
+- [ ] **TEE mode on MediaTek** — a related kernel driver exists, but neither
+  TA ABI compatibility nor the userspace/session boundary is established.
+  Treat it as a separate libfprint driver unless evidence shows that a
+  versioned protocol profile can be shared. This work requires
+  reverse-engineering
 - [x] **The reference platform's [trusted-application protocol](docs/02-ta-protocol.md)** —
-  recovered for one versioned Goodix QSEE profile; portability to other OEMs,
+  recovered for one versioned Goodix QSEE profile. Portability to other OEMs,
   parts, application names, or TEEs is not established:
   - [x] [enrolment, first finger](docs/02-ta-protocol.md#enrolment)
   - [x] [enrolment, additional fingers](docs/04-secure-storage.md#lifecycle-observed)
   - [x] [authentication (match and reject)](docs/02-ta-protocol.md#authentication)
   - [x] [unenrolment](docs/02-ta-protocol.md#removal)
   - [x] [calibration](docs/04-secure-storage.md#calibration-is-generated) —
-    generated on-the-fly by `gfenu` itself, nothing to handle
+    generated on-the-fly by `gfenu` itself, so there is nothing to handle
   - [ ] [lockout policy](docs/07-reference-client.md#safety) —
     not observed being enforced by the trusted application
   - [ ] [Gatekeeper-signed enrolment auth token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu) —
-    Android's signing flow is decoded, but Linux does not yet obtain and submit
-    a signed HAT; the harness uses this TA's challenge-only fallback
+    Android's signing flow is decoded, but Linux does not yet obtain and
+    submit a signed HAT; the harness uses this TA's challenge-only fallback
   - [x] [listing enrolled fingers](docs/04-secure-storage.md#application-index-versus-storage) —
     `ENUMERATE` returns count, group ids, and finger ids
   - [x] [per-sample quality feedback](docs/02-ta-protocol.md#error-codes) —
@@ -98,123 +104,146 @@ components use separate repositories for independent packaging and review.
   - [x] [which template matched](docs/02-ta-protocol.md#authentication) —
     finger id at IRQ payload +0x4fce8, copied into `AUTHENTICATE_FINISH`
   - [ ] [display wake on touch](docs/00-sensor-driver.md#panel-state) — not
-    decoded; `SCREEN_ON`/`SCREEN_OFF` (1017, 1018) are a client's to send, not
-    the sensor driver's
+    decoded; `SCREEN_ON`/`SCREEN_OFF` (1017, 1018) are for a client to send,
+    not for the sensor driver
 - [ ] **[GW in-display family](docs/00-sensor-driver.md#one-driver-family-many-parts)** —
-  untested; differs from the capacitive copies mostly in
-  board power and pins
-- [ ] **Upstreaming the kernel side** — both drivers build and run, but neither
-  has been posted. These have to be settled with the maintainers first:
+  untested. It differs from the capacitive copies mostly in board power and
+  pins
+- [ ] **Upstreaming the kernel side** — both drivers build and run, but
+  neither has been posted. These points have to be settled with the
+  maintainers first:
   - [ ] **`TEE_IMPL_ID_QSEECOM = 5` is new uapi** — a client tells this driver
-    from [`qcomtee`](docs/01-kernel-tee-driver.md#why-this-driver) by reading it
-    from `TEE_IOC_VERSION`, so the number is ABI and needs the TEE maintainer's
-    ack in the same posting
-  - [ ] **Sessions are opened by name, not by UUID** — QSEE matches on a string
-    and there is nothing to render a UUID into, so the name arrives in a
-    parameter and the UUID must be zero. `amdtee` renders its UUID into a
-    firmware filename; `qcomtee` hit the same wall and used objref parameters.
-    This driver does not claim `TEE_GEN_CAP_GP`, but the TEE subsystem may
-    prefer a generic "session by name" of its own to each backend overloading a
-    parameter
+    apart from [`qcomtee`](docs/01-kernel-tee-driver.md#why-this-driver) by
+    reading this value from `TEE_IOC_VERSION`. The number is therefore ABI,
+    and it needs the TEE maintainer's ack in the same posting
+  - [ ] **Sessions are opened by name, not by UUID** — QSEE matches on a
+    string, and there is nothing to render a UUID into; the name therefore
+    arrives in a parameter, and the UUID must be zero. `amdtee` renders its
+    UUID into a firmware filename, while `qcomtee` hit the same wall and used
+    objref parameters. This driver does not claim `TEE_GEN_CAP_GP`, but the
+    TEE subsystem may prefer a generic "session by name" of its own over each
+    backend overloading a parameter
   - [ ] **The privileged device's `open_session` is polymorphic** — it tells
-    "register a listener" from "load an application" by whether parameter 0 is
-    a value or a memref. Two `func` values would document themselves
+    "register a listener" apart from "load an application" by whether
+    parameter 0 is a value or a memref. Two separate `func` values would
+    document themselves
   - [ ] **[`CAP_SYS_ADMIN` on the privileged device](docs/01-kernel-tee-driver.md#security)** —
     no other TEE backend checks a capability; OP-TEE relies on the permissions
-    of `/dev/teepriv0`. Worth offering to drop rather than defending
+    of `/dev/teepriv0`. It is worth offering to drop this check rather than
+    defending it
   - [ ] **A TZ memory pool per invoke** — the bounce buffer for each command
     gets its own pool. For the [`IRQ` command](docs/02-ta-protocol.md#interrupts)
-    that is a large allocation at interrupt rates, and `-ENOMEM` mid-capture
-    under fragmentation
+    that means a large allocation at interrupt rates, and `-ENOMEM`
+    mid-capture under fragmentation
   - [ ] **The `mdt_loader` extension** needs a soc/qcom ack — it adds two
     functions and a Kconfig prompt to a file this project does not own; see
     [what the rest of the kernel had to grow](docs/01-kernel-tee-driver.md#what-the-rest-of-the-kernel-had-to-grow)
   - [ ] **[A wedged supplicant blocks every QSEECOM user](docs/01-kernel-tee-driver.md#a-wedged-supplicant-blocks-more-than-itself)**,
-    in-kernel ones included — which decides who may be granted the privileged
+    in-kernel ones included — this decides who may be granted the privileged
     device
 
 - [x] **A machine-wide QSEECOM supplicant** — implemented in
-  [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant); its listener service
+  [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant).
+  Its listener service
   [belongs in one machine-wide process](docs/05-writing-a-client.md#supplicant-design-decision)
-  rather than inside the `fprintd` driver, since the kernel allows one receiver
-  per device (not per trusted app!) and a second QSEE client handling some other
-  type of app could not register a handler of its own. Qualcomm's
-  [`minkipc`](https://github.com/qualcomm/minkipc) is the source-level protocol
-  and dispatch reference, while the local daemon supplies the legacy QSEECOM
-  transport, confined state root, packaging, reconnect lifecycle, and
-  hardware-free tests. On the reference device it replaced `gfharness --supp`
-  for TA initialisation and enumeration. Restarting only the supplicant kept
-  the independently loaded TA resident, re-registered both listeners, and
-  allowed the same operations to complete afterwards.
+  rather than inside the `fprintd` driver, because the kernel allows one
+  receiver per device (not per trusted app!); a second QSEE client handling
+  some other type of app could not register a handler of its own. Qualcomm's
+  [`minkipc`](https://github.com/qualcomm/minkipc) is the source-level
+  protocol and dispatch reference, while the local daemon supplies:
+  - the legacy QSEECOM transport,
+  - the confined state root,
+  - packaging,
+  - the reconnect lifecycle,
+  - hardware-free tests.
+
+  On the reference device it replaced `gfharness --supp`; the tested restart
+  and reconnect behaviour is listed in
+  [tests on the reference platform](docs/08-production-client-stack.md#tests-on-the-reference-platform).
 
 - [x] **A libfprint Goodix QSEE driver** — implemented on the
   [`goodix-qsee` branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee)
-  in the separate libfprint repository. It discovers the
-  firmware-described misc device, reads the TA name from `firmware_name`, and
-  implements initialisation, list, enroll, identify/verify, delete, clear,
-  cancellation, IRQ draining, matched IDs, and quality feedback. Build and
-  hardware-free protocol/core tests pass. Live fprintd tests cover probe,
-  open/close, enumeration, enrolment, duplicate rejection, known-finger
-  verification, matched-ID reporting, per-sample retry feedback, cancellation,
-  and deletion of one print. GDM login and unlock work through a dedicated
-  `pam_fprintd` service. Re-arming the TA control fields before every IRQ drain
-  invocation is required and implemented.
+  in the separate libfprint repository. The driver discovers the
+  firmware-described misc device and reads the TA name from `firmware_name`.
+  It implements:
+  - initialisation,
+  - list,
+  - enroll,
+  - identify/verify,
+  - delete,
+  - clear,
+  - cancellation,
+  - IRQ draining,
+  - matched IDs,
+  - quality feedback.
+
+  Build and hardware-free protocol/core tests pass; the live fprintd and GDM
+  behaviour verified on the reference device is listed in
+  [tests on the reference platform](docs/08-production-client-stack.md#tests-on-the-reference-platform).
 
 ## What is not understood
 
-The stack is complete for the reference platform. The following items do not
-block its working lifecycle; they define portability and security work that is
-not claimed complete.
+The stack is complete for the reference platform. The items below do not
+block its working lifecycle; they define portability and security work that
+is not claimed complete.
 
-What these have in common is that reading or porting the downstream code does
-not settle them. They need a device to test against, a vendor to answer, or
-evidence from outside this project entirely.
+These items share one property: reading or porting the downstream code does
+not settle them. Each one needs a device to test against, a vendor to answer,
+or evidence from outside this project entirely.
 
 - [ ] **Whether another TA or firmware generation requires a
   [Gatekeeper-signed enrolment token](docs/06-Gatekeeper-protocol.md#relationship-to-gfenu).**
-  This one accepts a token carrying only the fresh challenge
-  both before and after a lock-screen credential is provisioned
+  This TA accepts a token that carries only the fresh challenge, both before
+  and after a lock-screen credential is provisioned
   ([[our device]](#how-we-know)). Android supplies a signed, challenge-bound
-  token; its UI's backup-PIN requirement is framework policy, not an additional
-  Goodix protocol step.
-- [ ] **Whether the trusted application enforces any lockout of its own.** Not
-  observed ([status](#status)); treat the absence as unverified and implement
-  lockout regardless.
+  token; its UI's backup-PIN requirement is framework policy, not an
+  additional Goodix protocol step.
+- [ ] **Whether the trusted application enforces any lockout of its own.**
+  This was not observed ([status](#status)); treat the absence as unverified
+  and implement lockout regardless.
 - [ ] **Whether the other listener services are ever needed.** We never
   observed `gfenu` raising a request on any of them, across every flow we
-  exercised ([[our device]](#how-we-know)). Unexercised paths, and other firmware versions, are
-  not covered by that.
-- [ ] **How broadly the recovered trusted-application ABI applies.** `gfenu` is
-  the filename supplied by the reference platform's firmware description, not a known
-  cross-device Goodix protocol name.  We do not know whether another OEM's
-  Goodix application, another sensor generation, or a Goodix application on a
-  MediaTek or newer Qualcomm TEE uses the same command numbers, payload layouts,
-  interrupt state machine, or storage conventions.  A production client must
-  treat the protocol documented here as a versioned compatibility profile,
-  select it from positive platform evidence, and obtain the application name
-  from the kernel's `firmware_name` sysfs attribute, populated from the device
-  tree `firmware-name` property, rather than compiling `gfenu` into the driver
+  exercised ([[our device]](#how-we-know)). That observation does not cover
+  unexercised paths or other firmware versions.
+- [ ] **How broadly the recovered trusted-application ABI applies.** `gfenu`
+  is the filename supplied by the reference platform's firmware description;
+  it is not a known cross-device Goodix protocol name. We do not know whether
+  the same command numbers, payload layouts, interrupt state machine, or
+  storage conventions are used by:
+  - another OEM's Goodix application,
+  - another sensor generation,
+  - a Goodix application on a MediaTek or newer Qualcomm TEE.
+
+  A production client must therefore treat the protocol documented here as a
+  versioned compatibility profile and select it from positive platform
+  evidence. It must obtain the application name from the kernel's
+  `firmware_name` sysfs attribute, which is populated from the device tree
+  `firmware-name` property, rather than compiling `gfenu` into the driver
   identity.
-- [ ] **Whether a trusted application image is bound to a model or a vendor, and
-  who signs it.** The image used here came from the stock OS of the model it
-  runs on, and we never tried it anywhere else — another unit of the same model
-  is not the interesting case; a different model or manufacturer sharing the
-  sensor and SoC is. The secure world rejects a malformed image, which
-  shows it checks integrity, but says nothing about device binding or about the
-  signing chain. In particular we do not know whether trusted applications can
-  be redistributed the way other Qualcomm firmware is, or whether they are
-  signed with keys held only by Qualcomm or the OEM. Nobody has checked whether
-  `linux-firmware` already carries a trusted application, which would answer it
-  by example and is the cheapest place to start. That question decides whether any of this can be
-  packaged for users rather than extracted per device.
-- [ ] **What the sensor's own image data means.** The reference client can save raw
-  frames, but nothing here interprets them; all image processing happens inside
-  the secure world.
+- [ ] **Whether a trusted application image is bound to a model or a vendor,
+  and who signs it.** The image used here came from the stock OS of the model
+  it runs on, and we never tried it anywhere else. Another unit of the same
+  model is not the interesting case; a different model or manufacturer
+  sharing the sensor and SoC is.
+
+  The secure world rejects a malformed image. That shows it checks integrity,
+  but it says nothing about device binding or about the signing chain. In
+  particular, we do not know whether trusted applications can be
+  redistributed the way other Qualcomm firmware is, or whether they are
+  signed with keys held only by Qualcomm or the OEM.
+
+  Nobody has checked whether `linux-firmware` already carries a trusted
+  application; that would answer the question by example and is the cheapest
+  place to start. This question decides whether any of this can be packaged
+  for users rather than extracted per device.
+- [ ] **What the sensor's own image data means.** The reference client can
+  save raw frames, but nothing here interprets them; all image processing
+  happens inside the secure world.
 
 ## What is where
 
-Eight pieces, each independently useful; the first four had to exist for any of
-it to work.
+There are eight pieces, and each is independently useful. The first four had
+to exist for any of it to work.
 
 | layer | what it does | where |
 |---|---|---|
@@ -227,31 +256,35 @@ it to work.
 | **Proof-of-concept client** | command-line hardware and protocol test tool that implements the complete client flow in one program | [`docs/07-reference-client.md`](docs/07-reference-client.md), code in [`harness/`](harness/) |
 | **Production userspace: supplicant and libfprint driver** | production implementation of the same client responsibilities, divided between machine-wide listener and TA-loading services and the fprintd/libfprint match-on-chip driver | [`docs/08-production-client-stack.md`](docs/08-production-client-stack.md), [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), branch [`goodix-qsee`](https://github.com/wrobelda/libfprint/tree/goodix-qsee) at [`wrobelda/libfprint`](https://github.com/wrobelda/libfprint) |
 
-Read them in order. The TA protocol is meaningless without a listener service
-running, and the listener service cannot be registered without the kernel
-driver.
+Read the documents in order. The TA protocol is meaningless without a running
+listener service, and the listener service cannot be registered without the
+kernel driver.
 
 ## Quick start
 
-Two kernel drivers, one branch each, both off mainline v7.1 at
-[wrobelda/linux](https://github.com/wrobelda/linux):
+There are two kernel drivers, with one branch each. Both are based off
+mainline v7.1 at [wrobelda/linux](https://github.com/wrobelda/linux):
 
 | branch | provides | config symbol |
 |---|---|---|
 | [`qcom-qseecom-tee`](https://github.com/wrobelda/linux/tree/qcom-qseecom-tee) | the TEE driver, reaching trusted applications | `CONFIG_TEE_QSEECOM` |
 | [`goodix-fp-spi`](https://github.com/wrobelda/linux/tree/goodix-fp-spi) | the sensor driver and its binding, powering the sensor | `CONFIG_INPUT_GOODIX_FP_SPI` |
 
-They are independent series and do not depend on each other, but the sequence
-below needs both, plus a device tree node for the sensor — the board support is
-not on either branch.
+The branches are independent series and do not depend on each other. The
+sequence below needs both of them, plus a device tree node for the sensor;
+the board support is not on either branch.
 
-With those drivers in place, install and enable
-[`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant), install the
-[hardware udev rule](udev/60-goodix-qsee.rules), and install the [`goodix-qsee`
-libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee). The
-udev rule reads the trusted-application name from the sensor and starts the
-matching application-loader instance automatically.
-The supplicant must be ready before the loader and biometric clients. See
+With those drivers in place:
+
+- install and enable
+  [`qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant),
+- install the [hardware udev rule](udev/60-goodix-qsee.rules),
+- install the
+  [`goodix-qsee` libfprint branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee).
+
+The udev rule reads the trusted-application name from the sensor and starts
+the matching application-loader instance automatically. The supplicant must
+be ready before the loader and the biometric clients; see
 [the production client lifecycle](docs/08-production-client-stack.md#lifecycle).
 
 For command-line protocol and hardware testing, build `gfharness` and use
@@ -269,65 +302,73 @@ Everything documented here was verified on:
 - **Application** `gfenu`, loaded from `/vendor/firmware_mnt/image/`
 - **[Sensor driver](docs/00-sensor-driver.md)**
   `drivers/input/misc/goodix_fp_spi.c`, which owns the regulator, reset line
-  and
-  interrupt, and reports interrupts over netlink
+  and interrupt, and reports interrupts over netlink
 
 Its [device tree node, and the state of its
 binding](docs/00-sensor-driver.md#device-tree), are documented with the
 driver.
 
 On another model, expect the application and the sensor part to differ, and
-check payload sizes; the transport and the listener protocols should not
+check the payload sizes; the transport and the listener protocols should not
 change.
 
-None of what the sensor does is visible to the operating system. It captures
-images and runs firmware of its own, but it does that across an SPI bus the
-secure world owns; what reaches the normal world is an interrupt line saying
-that something happened. Every decision — image processing, template
-construction, matching — is made inside the trusted application. That is why
-this is a protocol problem rather than a hardware-driver problem — although a
-[small hardware driver](docs/00-sensor-driver.md) naturally exists too,
-owning the power, reset and interrupt the secure world leaves to the normal
-world.
+None of what the sensor does is visible to the operating system. The sensor
+captures images and runs firmware of its own, but it does that across an SPI
+bus the secure world owns. The only thing that reaches the normal world is an
+interrupt line saying that something happened.
+
+Every decision is made inside the trusted application:
+
+- image processing,
+- template construction,
+- matching.
+
+That is why this is a protocol problem rather than a hardware-driver problem.
+A [small hardware driver](docs/00-sensor-driver.md) still exists; it owns the
+power, reset and interrupt that the secure world leaves to the normal world.
 
 ## Scope
 
-Three things stack up here, and they generalise differently:
+Three things are stacked here, and they generalise differently:
 
-- **The QSEECOM transport and its listener services are Qualcomm-generic.** Any
-  device whose secure world is QSEE speaks this, whatever application is running
-  on top. The [kernel driver](docs/01-kernel-tee-driver.md) and
+- **The QSEECOM transport and its listener services are Qualcomm-generic.**
+  Any device whose secure world is QSEE speaks this, whatever application is
+  running on top. The [kernel driver](docs/01-kernel-tee-driver.md) and
   [listener service](docs/03-listener-services.md) documents should apply
   unchanged.
 - **The recovered command set is a versioned Goodix compatibility profile.**
-  It is implemented for the positively matched reference platform. Similar
-  Goodix hardware, another TA filename, another OEM, or another TEE does not
-  establish ABI compatibility. Those cases need a separate profile or driver
-  until tested.
+  It is implemented for the positively matched reference platform. ABI
+  compatibility is not established by:
+  - similar Goodix hardware,
+  - another TA filename,
+  - another OEM,
+  - another TEE.
+
+  Those cases need a separate profile or driver until tested.
 - **What is per-model splits three ways, and each is configured somewhere
   different.**
-  - *The sensor hardware* — regulator, reset line, interrupt — is described in
-    the device tree and driven by the
+  - *The sensor hardware* — regulator, reset line, interrupt — is described
+    in the device tree and driven by the
     [companion char device](docs/00-sensor-driver.md). Board description
     belongs there, and this is the only one of the three that is in DT.
   - *The trusted application* ships with the device's stock operating system,
-    and was extracted from it. How far one image travels between models, and
-    whether it may be redistributed at all, is unresolved — see
+    and it was extracted from that system. How far one image travels between
+    models, and whether it may be redistributed at all, is unresolved — see
     [What is not understood](#what-is-not-understood).
   - *The application name and its payload sizes* belong to the application
-    rather than the board. The client passes the name when opening a session and
-    has to know the payload layout; the kernel TEE driver is
+    rather than the board. The client passes the name when opening a session,
+    and it has to know the payload layout. The kernel TEE driver is
     application-agnostic and reads neither from the device tree.
 
 Everything here was established on one device, the
 [reference platform](#reference-platform), by the means set out in
-[How we know](#how-we-know). Treat the layer
-boundaries as the guide to what should port and what needs re-checking.
+[How we know](#how-we-know). Treat the layer boundaries as the guide to what
+should port and what needs re-checking.
 
 ## How we know
 
-Claims in these documents come from five different places, and they are not
-equally strong. Where it matters, a claim carries a tag:
+Claims in these documents come from five different places, and those places
+are not equally strong. Where it matters, a claim carries a tag:
 
 | tag | source | what would overturn it |
 |---|---|---|
@@ -337,14 +378,15 @@ equally strong. Where it matters, a claim carries a tag:
 | `([gfenu symbols])` | symbol names in the trusted application image | names that do not mean what they suggest |
 | `([Qualcomm minkipc])` | Qualcomm's QTEE listener protocol headers and service implementations in [`qualcomm/minkipc`](https://github.com/qualcomm/minkipc/tree/main/listeners) | a device carrying a modified Qualcomm listener ABI |
 
-Only the five labels in that table are tags, and each one in the text links back
-here. Square brackets elsewhere — `"[gf_fts]"`, for instance — are literal
-strings quoted from a binary, not provenance.
+Only the five labels in that table are tags, and each tag in the text links
+back here. Square brackets elsewhere — for instance `"[gf_fts]"` — are
+literal strings quoted from a binary, not provenance.
 
-Untagged statements are either definitions or things that follow directly from
-tagged ones. Two conventions to keep when editing: an absence is almost always
-"we did not observe X", not "X does not exist", and anything learned from one
-device should say so.
+Untagged statements are either definitions or things that follow directly
+from tagged ones. Keep two conventions when editing:
+
+- an absence is almost always "we did not observe X", not "X does not exist";
+- anything learned from one device should say so.
 
 ## Glossary
 
@@ -406,25 +448,29 @@ device should say so.
 
 ## Licence
 
-GPL-2.0-only, as declared in the source files. The kernel work lives on its own
-branches and carries the kernel's own licensing: the driver is `GPL-2.0-only`,
-and its device tree binding keeps the dual `GPL-2.0-only OR BSD-2-Clause` that
-bindings use.
+GPL-2.0-only, as declared in the source files. The kernel work lives on its
+own branches and carries the kernel's own licensing: the driver is
+`GPL-2.0-only`, while its device tree binding keeps the dual
+`GPL-2.0-only OR BSD-2-Clause` that bindings use.
 
 ## Provenance
 
 The protocol documentation and the reference client are clean-room work for
-interoperability, produced on hardware owned by the author with the bootloader
-unlocked by him, using his own fingerprints. They document how to *talk to* the
-trusted application; they do not extract biometric data, recover keys, or defeat
-any check the application makes.
+interoperability. They were produced on hardware owned by the author, with
+the bootloader unlocked by him, using his own fingerprints. They document how
+to *talk to* the trusted application; they do not:
 
-The sensor driver is **not** clean-room and is not claimed to be. It
-is a backport of Goodix's downstream driver, GPL-2.0-only, carrying its original
-copyrights — see its [provenance and
+- extract biometric data,
+- recover keys,
+- defeat any check the application makes.
+
+The sensor driver is **not** clean-room and is not claimed to be. It is a
+backport of Goodix's downstream driver, GPL-2.0-only, and it carries its
+original copyrights — see its [provenance and
 licence](docs/00-sensor-driver.md#provenance-and-licence).
 
-Fingerprint templates are sealed with a device-bound key inside the secure world
-and remain opaque — the storage layer described here stores and returns
-ciphertext without being able to read it. Where the application enforces
-something, the documented answer is to satisfy it, never to bypass it.
+Fingerprint templates are sealed with a device-bound key inside the secure
+world, and they remain opaque: the storage layer described here stores and
+returns ciphertext without being able to read it. Where the application
+enforces something, the documented answer is to satisfy it, never to bypass
+it.

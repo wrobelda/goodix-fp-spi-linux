@@ -1,11 +1,11 @@
 # Production Linux client stack
 
 This document describes the production implementation of the client
-responsibilities also demonstrated by the
-[proof-of-concept client](07-reference-client.md). The proof-of-concept client
-combines those responsibilities in one command-line hardware and protocol test
-program. The production stack divides them between system services and a
-libfprint driver; it does not link to or execute the proof-of-concept client.
+responsibilities that the [proof-of-concept client](07-reference-client.md)
+also demonstrates. The proof-of-concept client combines those responsibilities
+in one command-line hardware and protocol test program. The production stack
+divides them between system services and a libfprint driver; it does not link
+to or execute the proof-of-concept client.
 
 The production sources are maintained separately:
 
@@ -23,57 +23,81 @@ protocol research and architecture decisions.
 
 ### Machine-wide TEE supplicant
 
-One machine-wide process owns each configured TEE supplicant transport.  Its
-transport vtable discovers a TEE, registers services, receives a request, and
-sends a reply.  A separate service registry maps transport-neutral service
-identities to protocol dispatch objects.  The first transport owns the legacy
-QSEECOM queue on `/dev/teeprivN`; its first services are Qualcomm listener 10
-(FS) and listener 28672 (GPFS).
+One machine-wide process owns each configured TEE supplicant transport. Its
+transport vtable performs four steps:
 
-This follows MinkIPC's useful split between listener registration, a
-callback/dispatch object, and service implementations without making MinkIPC
-the daemon's permanent outer architecture.  QTEE object registration in
-MinkIPC cannot implement the initial transport: this kernel exposes legacy
-QSEECOM `TEE_IOC_SUPPL_RECV`/`TEE_IOC_SUPPL_SEND`.  A newer Qualcomm QTEE/Mink
-transport or an OP-TEE transport can later implement the same lifecycle vtable
-and publish its own service set.  Services are capabilities selected by
-configuration, not fingerprint-specific assumptions.
+- discover a TEE;
+- register services;
+- receive a request;
+- send a reply.
 
-The daemon is application agnostic.  It does not load `gfenu`, open the sensor,
-or implement fingerprint policy.  The generic, separately supervised
-`qsee-app-loader@.service` may load a configured TA only after the supplicant is
-ready and hold its load session independently.
+A separate service registry maps transport-neutral service identities to
+protocol dispatch objects. The first transport owns the legacy QSEECOM queue
+on `/dev/teeprivN`; its first services are Qualcomm listener 10 (FS) and
+listener 28672 (GPFS).
 
-All protocol paths are untrusted input.  They are resolved beneath a configured
-state directory and Android absolute paths are treated as names within that
-directory, not host paths.  Path traversal, empty components where forbidden,
-embedded-NUL ambiguity, symlink traversal, and non-regular GPFS objects are
-rejected.  The daemon keeps directory descriptors rather than changing its
-working directory.
+This design follows MinkIPC's useful split between listener registration, a
+callback/dispatch object, and service implementations; it does not make
+MinkIPC the daemon's permanent outer architecture. QTEE object registration in
+MinkIPC cannot implement the initial transport, because this kernel exposes
+legacy QSEECOM `TEE_IOC_SUPPL_RECV`/`TEE_IOC_SUPPL_SEND`.
 
-GPFS writes are serialised.  A complete offset-zero write is staged in the
-destination directory, synced, optionally backed up, atomically renamed, and
-followed by a directory sync.  Partial offset writes are serialised and synced
-but cannot be made atomically without changing the listener ABI.  Objects and
-directories default to modes 0600 and 0700.  The service never creates empty
-placeholder objects.
+A newer Qualcomm QTEE/Mink transport or an OP-TEE transport can later
+implement the same lifecycle vtable and publish its own service set. Services
+are capabilities selected by configuration, not fingerprint-specific
+assumptions.
+
+The daemon is application agnostic: it does not load `gfenu`, open the sensor,
+or implement fingerprint policy. The generic, separately supervised
+`qsee-app-loader@.service` may load a configured TA only after the supplicant
+is ready and hold its load session independently.
+
+All protocol paths are untrusted input. Each path is resolved beneath a
+configured state directory, and Android absolute paths are treated as names
+within that directory, not host paths.
+
+The daemon rejects:
+
+- path traversal;
+- empty components where forbidden;
+- embedded-NUL ambiguity;
+- symlink traversal;
+- non-regular GPFS objects.
+
+The daemon keeps directory descriptors rather than changing its working
+directory.
+
+GPFS writes are serialised. A complete offset-zero write follows these steps:
+
+- it is staged in the destination directory;
+- it is synced;
+- it is optionally backed up;
+- it is atomically renamed;
+- a directory sync follows.
+
+Partial offset writes are serialised and synced, but they cannot be made
+atomically without changing the listener ABI. Objects and directories default
+to modes 0600 and 0700; the service never creates empty placeholder objects.
 
 ### libfprint Goodix drivers
 
-The `goodixqsee` driver is a TEE match-on-chip driver:
-imaging, templating, and matching are delegated to the Goodix trusted
-application.  A Goodix sensor for which normal world has direct SPI or a
-complete kernel imaging interface belongs in a separate REE/image driver,
-selected by its own device table and kernel ABI.  There is no runtime
+The `goodixqsee` driver is a TEE match-on-chip driver: imaging, templating,
+and matching are delegated to the Goodix trusted application.
+
+A Goodix sensor for which normal world has direct SPI or a complete kernel
+imaging interface belongs in a separate REE/image driver; that driver is
+selected by its own device table and kernel ABI. There is no runtime
 TEE-versus-REE backend switch inside `goodixqsee`.
 
-The bus is therefore not the backend.  As libfprint's Unsupported Devices wiki
-notes for SPI sensors, many Android devices restrict direct SPI access to secure
-world.  Such a device may still have a normal-world kernel driver for power,
-reset, and IRQ delivery, but it must bind an appropriate TEE driver.  A
-separate REE driver must bind only when the kernel ABI actually permits sensor
-transactions (or provides a complete imaging interface).  ACPI or device-tree
-compatibility with the same Goodix family is not sufficient evidence by itself.
+The bus is therefore not the backend. As libfprint's Unsupported Devices wiki
+notes for SPI sensors, many Android devices restrict direct SPI access to
+secure world. Such a device may still have a normal-world kernel driver for
+power, reset, and IRQ delivery, but it must bind an appropriate TEE driver.
+
+A separate REE driver must bind only when the kernel ABI actually permits
+sensor transactions (or provides a complete imaging interface). ACPI or
+device-tree compatibility with the same Goodix family is not sufficient
+evidence by itself.
 
 The `goodixqsee` driver is a normal-world protocol client. It owns, for one
 open device lifetime:
@@ -83,125 +107,168 @@ open device lifetime:
   attribute, which is populated from the DT `firmware-name` property;
 * the netlink IRQ subscription and IRQ-drain state.
 
-The TA name is mandatory runtime device data.  `gfenu` is the value on the
-reference platform, not the libfprint driver name or a fallback assumed for other
-devices.
+The TA name is mandatory runtime device data. `gfenu` is the value on the
+reference platform; it is not the libfprint driver name, and it is not a
+fallback assumed for other devices.
 
-Sensor power/reset/IRQ operations live behind a sensor-I/O interface rather
-than in the `gfenu` command codec.  Likewise, TA session/invoke operations live
-behind a TEE-client interface.  QSEECOM is the first implementation.  A Goodix
-TA hosted by MediaTek's TEE or OP-TEE should be a separate libfprint driver when
-its TA or sensor ABI differs; it may reuse operation mapping and codec code only
-where compatibility is established.  Similar hardware branding is not treated
-as protocol compatibility.
+Sensor power/reset/IRQ operations live behind a sensor-I/O interface, not in
+the `gfenu` command codec. Likewise, TA session/invoke operations live behind
+a TEE-client interface; QSEECOM is the first implementation.
+
+A Goodix TA hosted by MediaTek's TEE or OP-TEE should be a separate libfprint
+driver when its TA or sensor ABI differs. Such a driver may reuse operation
+mapping and codec code only where compatibility is established; similar
+hardware branding is not treated as protocol compatibility.
 
 The driver does not register listeners and does not need `/dev/teeprivN`.
 `qsee-app-loader` performs the privileged TA load; the driver then opens an
-unprivileged client session through `/dev/teeN`. Access to the sensor and TA is
-serialised by libfprint's action model and an internal operation state;
-cancellation sends `CANCEL` before completing the cancelled action.
+unprivileged client session through `/dev/teeN`.
 
-The driver is match-on-chip.  A serialised `FpPrint` contains only a versioned
+Access to the sensor and TA is serialised by libfprint's action model and an
+internal operation state. Cancellation sends `CANCEL` before completing the
+cancelled action.
+
+The driver is match-on-chip. A serialised `FpPrint` contains only a versioned
 locator:
 
 ```
 protocol profile = 1, group id, Goodix finger id
 ```
 
-The runtime TA name is part of the device identity, not each print locator.  A
-profile number identifies the positively matched command/layout ABI.  The
-record contains no image or portable template.  The configured state directory is
-a self-contained set of sealed fingerprint objects.  `gfenu` reconstructs its
-enrolment list from those files and exposes it through `ENUMERATE`; the TA has
-no separate persistent enrolment database.  fprintd metadata is authoritative
-for the prints managed through this stack, and its normal reconciliation and
-orphan-cleanup policy applies.  Deletion is performed through the `gfenu`
-protocol, never by editing opaque objects directly.  A successful identify uses
-the matched group and finger id from the drained IRQ payload to select the
-gallery entry.
+The runtime TA name is part of the device identity, not each print locator. A
+profile number identifies the positively matched command/layout ABI; the
+record contains no image or portable template.
+
+The configured state directory is a self-contained set of sealed fingerprint
+objects. `gfenu` reconstructs its enrolment list from those files and exposes
+it through `ENUMERATE`; the TA has no separate persistent enrolment database.
+
+fprintd metadata is authoritative for the prints managed through this stack,
+and its normal reconciliation and orphan-cleanup policy applies. Deletion is
+performed through the `gfenu` protocol, never by editing opaque objects
+directly. A successful identify uses the matched group and finger id from the
+drained IRQ payload to select the gallery entry.
 
 There is no enrolment-import, cross-environment migration, or
 orphan-preservation feature in this design.
 
-Group 0 is the initial device policy.  The group is present in every locator so
-multi-user/group policy can later be added without changing the storage model.
+Group 0 is the initial device policy. The group is present in every locator,
+so multi-user/group policy can later be added without changing the storage
+model.
+
 Secure-object filenames are deliberately absent from the print record: slot
-filenames are a private TA/storage implementation detail and are not finger
-ids.
+filenames are a private TA/storage implementation detail, and they are not
+finger ids.
 
 ### Enrolment authorisation
 
 The driver asks an enrolment-token provider for exactly 69 bytes after
-`PRE_ENROLL`.  A provider receives the fresh challenge and returns a packed
+`PRE_ENROLL`. A provider receives the fresh challenge and returns a packed
 `hw_auth_token_t`; it does not receive sensor data. The reference-platform
-provider constructs the device-specific challenge-only token. This fallback
+provider constructs the device-specific challenge-only token; this fallback
 has a weaker normal-world authorisation boundary.
 
 A future credential service can implement the same boundary and return a
-Gatekeeper-signed HAT.  PIN handling, Keymaster CBOR, synthetic-password state,
-and credential throttling do not belong in the driver or supplicant.  Signed
-token support is not complete until such a provider exists and is tested end to
-end.
+Gatekeeper-signed HAT. Several concerns do not belong in the driver or
+supplicant:
+
+- PIN handling;
+- Keymaster CBOR;
+- synthetic-password state;
+- credential throttling.
+
+Signed token support is not complete until such a provider exists and is
+tested end to end.
 
 ## Reuse investigation
 
-Qualcomm MinkIPC supplies the authoritative FS/GPFS ids, message layouts,
-operation tables, GPFS version, and the service-manager pattern.  Its current
-`qtee_supplicant` dynamically loads listener libraries, while each listener
-creates a Mink callback object with `CListenerCBO_new()` and registers it using
-`IRegisterListenerCBO_register()`.  Those object-transport calls remain QTEE
-specific and are replaced by one Linux TEE supplicant receive loop.
+Qualcomm MinkIPC supplies these authoritative items:
 
-Mainline `qcomtee` already maps QTEE callback objects onto the generic Linux TEE
-supplicant receive/send ioctls.  That confirms a second transport can share the
-daemon's lifecycle and service registry, although its object-shaped request ABI
-is not interchangeable with legacy QSEECOM's numeric listeners.
+- the FS/GPFS ids;
+- the message layouts;
+- the operation tables;
+- the GPFS version;
+- the service-manager pattern.
+
+Its current `qtee_supplicant` dynamically loads listener libraries, while each
+listener creates a Mink callback object with `CListenerCBO_new()` and
+registers it using `IRegisterListenerCBO_register()`. Those object-transport
+calls remain QTEE specific, so they are replaced by one Linux TEE supplicant
+receive loop.
+
+Mainline `qcomtee` already maps QTEE callback objects onto the generic Linux
+TEE supplicant receive/send ioctls. That confirms a second transport can share
+the daemon's lifecycle and service registry, although its object-shaped
+request ABI is not interchangeable with legacy QSEECOM's numeric listeners.
 
 The operation handlers are used as a protocol reference rather than copied as
-architecture.  Their Android mount probing and absolute-path policy are not
-suitable for a native Linux machine-wide daemon.  The local backend instead
+architecture. Their Android mount probing and absolute-path policy are not
+suitable for a native Linux machine-wide daemon. The local backend instead
 uses an explicit state root and Linux atomic-filesystem primitives.
 
-OP-TEE's `tee-supplicant` provides the lifecycle precedent: it is available
-before clients, owns the privileged backend device, and serves the whole
-machine.  Its RPC protocol and OP-TEE implementation-id check are not reusable.
+OP-TEE's `tee-supplicant` provides the lifecycle precedent:
+
+- it is available before clients;
+- it owns the privileged backend device;
+- it serves the whole machine.
+
+Its RPC protocol and OP-TEE implementation-id check are not reusable.
 
 libfprint's existing match-on-chip drivers provide the device-stored print and
 list/delete/clear action conventions. The production branch adds generic
-firmware-described misc-device discovery so the Goodix driver binds the real
+firmware-described misc-device discovery, so the Goodix driver binds the real
 platform device rather than a fake spidev node.
 
-A July 2026 GXFP5130 kernel series is direct-REE Goodix prior art: it exposes a
-`/dev/gxfp` misc device for a companion libfprint plugin rather than pretending
-the eSPI mailbox is a spidev device.  Its public kernel series validates a misc
-device as a legitimate Goodix userspace boundary. Its direct-REE protocol is a
-separate libfprint driver scope.
+A July 2026 GXFP5130 kernel series is direct-REE Goodix prior art: it exposes
+a `/dev/gxfp` misc device for a companion libfprint plugin instead of
+presenting the eSPI mailbox as a spidev device. Its public kernel series
+validates a misc device as a legitimate Goodix userspace boundary; its
+direct-REE protocol is a separate libfprint driver scope.
 
 ## Lifecycle
 
 The service manager creates configured state directories and starts the
 supplicant before application-loader instances. The loader unit uses `Wants=`
-rather than `Requires=` for this relationship: a supplicant failure must not
-stop loader processes or discard their TA references. The loader and
-supplicant are separate failure domains: restarting the supplicant must
-re-register listeners and resume service for a previously loaded TA without
-unloading it. This was
-verified on the reference device by retaining the loader PID, restarting only
-the supplicant, and then completing `gfenu` initialisation and enumeration.
-A separate direct-REE Goodix driver has no supplicant dependency.  On a recoverable TEE
-device loss the daemon closes every listener/session and retries discovery and
-registration with bounded exponential backoff.  SIGTERM/SIGINT stop receiving,
-close the privileged descriptor (unregistering listeners), sync outstanding
-state, and exit.  A watchdog may restart the daemon; a client operation blocked
-inside secure world must fail or be restarted with the TEE device rather than
-leaving a second supplicant racing the first.
+rather than `Requires=` for this relationship, because a supplicant failure
+must not stop loader processes or discard their TA references.
 
-Privilege is needed to open `/dev/teeprivN` and register listeners.  After the
+The loader and supplicant are separate failure domains: restarting the
+supplicant must re-register listeners and resume service for a previously
+loaded TA without unloading it. This was verified on the reference device with
+three steps:
+
+- retain the loader PID;
+- restart only the supplicant;
+- complete `gfenu` initialisation and enumeration.
+
+A separate direct-REE Goodix driver has no supplicant dependency.
+
+On a recoverable TEE device loss, the daemon closes every listener/session and
+retries discovery and registration with bounded exponential backoff.
+SIGTERM/SIGINT trigger these steps:
+
+- stop receiving;
+- close the privileged descriptor, which unregisters listeners;
+- sync outstanding state;
+- exit.
+
+A watchdog may restart the daemon. A client operation blocked inside secure
+world must fail or be restarted with the TEE device; it must not leave a
+second supplicant racing the first.
+
+Privilege is needed to open `/dev/teeprivN` and register listeners. After the
 state root and device are open, deployments should drop to a dedicated account
-where the kernel/device policy permits it.  Service-manager sandboxing should
-deny networking, new privileges, arbitrary filesystem writes, and access to
-home directories.  Device-node and LSM policy must separately restrict
-`/dev/teeN` and `/dev/goodix_fp` to fprintd.
+where the kernel/device policy permits it.
+
+Service-manager sandboxing should deny:
+
+- networking;
+- new privileges;
+- arbitrary filesystem writes;
+- access to home directories.
+
+Device-node and LSM policy must separately restrict `/dev/teeN` and
+`/dev/goodix_fp` to fprintd.
 
 ## Build and installation
 
@@ -218,9 +285,10 @@ device's DT `firmware-name` property. The reference platform uses
 `qsee-app-loader@gfenu.service`. The loader holds the TA load reference in a
 process separate from the supplicant.
 
-Build libfprint with the `goodixqsee` driver enabled and install it for fprintd.
-The fprintd service needs `/dev/goodix_fp` and the non-privileged TEE character
-devices. It does not need `/dev/teeprivN`. A systemd service drop-in can grant:
+Build libfprint with the `goodixqsee` driver enabled and install it for
+fprintd. The fprintd service needs `/dev/goodix_fp` and the non-privileged TEE
+character devices; it does not need `/dev/teeprivN`. A systemd service drop-in
+can grant:
 
 ```ini
 [Service]
@@ -228,8 +296,9 @@ DeviceAllow=/dev/goodix_fp rw
 DeviceAllow=char-tee rw
 ```
 
-On Alpine/pmOS, install a separate `/etc/pam.d/gdm-fingerprint` service because the
-`fprintd-pam` package installs the module without enabling it for GDM:
+On Alpine/pmOS, install a separate `/etc/pam.d/gdm-fingerprint` service
+because the `fprintd-pam` package installs the module without enabling it for
+GDM:
 
 ```pam
 #%PAM-1.0
@@ -240,8 +309,8 @@ session    include     base-session
 ```
 
 Keep `gdm-password` separate. GDM uses independent password and fingerprint
-workers, so the fingerprint module does not need to be added to shared password
-or SSH authentication stacks.
+workers, so the fingerprint module does not need to be added to shared
+password or SSH authentication stacks.
 
 ## Tests on the reference platform
 
@@ -257,36 +326,41 @@ The following behaviour has been tested on the Xiaomi Pad 5 Pro 5G:
 - per-sample enrolment retry and quality feedback;
 - GDM login and GNOME session unlock through `pam_fprintd`.
 
-The TA overwrites control fields in every IRQ response. The driver writes the
-mode, size, and arm fields before every IRQ drain invocation. Without this step,
-later invocations return an empty mask and fprintd times out.
+The TA overwrites control fields in every IRQ response, so the driver writes
+the mode, size, and arm fields before every IRQ drain invocation. Without this
+step, later invocations return an empty mask and fprintd times out.
 
 ## Continuous integration
 
-The supplicant GitHub Actions workflow runs on pushes and pull requests. It
-builds with GCC and Clang, runs the hardware-free protocol and filesystem tests,
-checks a staged installation, and repeats the tests with AddressSanitizer and
-UndefinedBehaviorSanitizer. Hardware-dependent listener registration and TA
-tests are not run in GitHub-hosted CI.
+The supplicant GitHub Actions workflow runs on pushes and pull requests. The
+workflow:
+
+- builds with GCC and Clang;
+- runs the hardware-free protocol and filesystem tests;
+- checks a staged installation;
+- repeats the tests with AddressSanitizer and UndefinedBehaviorSanitizer.
+
+Hardware-dependent listener registration and TA tests are not run in
+GitHub-hosted CI.
 
 The libfprint Goodix protocol test and core `fpi-device` test pass with the
-driver enabled. Live hardware tests require the reference platform and physical
-finger input.
+driver enabled. Live hardware tests require the reference platform and
+physical finger input.
 
 ## TA loader activation
 
 The hardware-integration package installs
-[`60-goodix-qsee.rules`](../udev/60-goodix-qsee.rules). When the kernel creates
-the `goodix_fp` misc device, udev reads the trusted application (TA) name from
-the sensor's `firmware_name` sysfs attribute. It escapes that name as a systemd
-instance identifier and starts the corresponding
+[`60-goodix-qsee.rules`](../udev/60-goodix-qsee.rules). When the kernel
+creates the `goodix_fp` misc device, udev reads the trusted application (TA)
+name from the sensor's `firmware_name` sysfs attribute. It escapes that name
+as a systemd instance identifier and starts the corresponding
 `qsee-app-loader@.service` instance. For example, `gfenu` starts
 `qsee-app-loader@gfenu.service`.
 
 This removes the need to enable a loader instance for each board. The rule is
 part of the Goodix hardware integration rather than libfprint or
-qsee-supplicant because it defines how this kernel sensor device is paired with
-its TA.
+qsee-supplicant, because it defines how this kernel sensor device is paired
+with its TA.
 
 Install and activate the rule with:
 
@@ -303,8 +377,8 @@ reference while the supplicant re-registers its listener services.
 
 This was verified on the reference device with the loader instance disabled
 and stopped. Triggering an add event for `goodix_fp` set
-`SYSTEMD_WANTS=qsee-app-loader@gfenu.service`; systemd started the instance and
-the loader reported `event=application_loaded app=gfenu`.
+`SYSTEMD_WANTS=qsee-app-loader@gfenu.service`; systemd started the instance
+and the loader reported `event=application_loaded app=gfenu`.
 
 At startup the loader first opens an unprivileged session to the named TA. An
 `ENOENT` result means that the TA is absent, so the loader performs the
@@ -312,10 +386,10 @@ privileged load. QSEE reports a concurrent duplicate load as `EINVAL`; in that
 case the loader retries the unprivileged session. It reports readiness only
 after either the attachment or load succeeds.
 
-The restart path was verified while another session kept `gfenu` resident. The
-restarted loader reported `event=application_attached app=gfenu` and retained
-the new session after the other holder exited. The absent-TA path was tested
-separately and reported `event=application_loaded app=gfenu`.
+The restart path was verified while another session kept `gfenu` resident.
+The restarted loader reported `event=application_attached app=gfenu` and
+retained the new session after the other holder exited. The absent-TA path was
+tested separately and reported `event=application_loaded app=gfenu`.
 
 ## TODO: TA availability and device lifecycle
 
@@ -336,20 +410,27 @@ The intended lifecycle is:
    exports and removes its D-Bus device when libfprint emits `device-added` and
    `device-removed`.
 
-The Linux TEE core already has a `tee` bus for discoverable TEE client devices.
-OP-TEE obtains a list of advertised device TAs from its enumeration pseudo-TA,
-registers devices named `optee-ta-<UUID>` on that bus, and emits
-`MODALIAS=tee:<UUID>`. This is the closest existing kernel convention, but it
-does not describe the live loaded-session set. Mainline QTEE does not currently
-register loaded applications or objects as `tee` bus devices. QSEECOM identifies
-applications by name rather than UUID, so the kernel design must define how a
-name-addressed QSEECOM application is represented on the existing `tee` bus
-before introducing a separate sysfs class.
+The Linux TEE core already has a `tee` bus for discoverable TEE client
+devices. OP-TEE uses that bus in three steps:
+
+- it obtains a list of advertised device TAs from its enumeration pseudo-TA;
+- it registers devices named `optee-ta-<UUID>` on that bus;
+- it emits `MODALIAS=tee:<UUID>`.
+
+This is the closest existing kernel convention, but it does not describe the
+live loaded-session set. Mainline QTEE does not currently register loaded
+applications or objects as `tee` bus devices.
+
+QSEECOM identifies applications by name rather than UUID. The kernel design
+must therefore define how a name-addressed QSEECOM application is represented
+on the existing `tee` bus before introducing a separate sysfs class.
 
 Libfprint's udev backend also needs dynamic monitoring. The merged
 [udev device support](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/260)
 performs initial enumeration and supports composite resources such as SPI plus
-HID, but it does not process later udev add/remove events. The open
+HID, but it does not process later udev add/remove events.
+
+The open
 [removal cleanup change](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/435)
 and [USB reconnect proposal](https://gitlab.freedesktop.org/libfprint/libfprint/-/work_items/852)
 do not add that support.
@@ -358,7 +439,9 @@ do not add that support.
 
 Enrolment uses the reference platform's challenge-only 69-byte HAT provider.
 The driver exposes a replaceable token-provider boundary that can accept a
-complete Gatekeeper-signed HAT from a separate credential service. Signed HAT
-support is not implemented. PIN handling, Keymaster requests, and
-synthetic-password logic do not belong in the fingerprint driver or
-supplicant; see the [Gatekeeper protocol](06-Gatekeeper-protocol.md).
+complete Gatekeeper-signed HAT from a separate credential service; signed HAT
+support is not implemented.
+
+PIN handling, Keymaster requests, and synthetic-password logic do not belong
+in the fingerprint driver or supplicant; see the
+[Gatekeeper protocol](06-Gatekeeper-protocol.md).

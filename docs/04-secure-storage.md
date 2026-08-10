@@ -1,11 +1,13 @@
 # Layer 4: secure storage
 
-Everything the trusted application
-([`gfenu`](02-ta-protocol.md#the-application)) persists goes through
-[the listener services](03-listener-services.md), as sealed objects. The payloads are encrypted and integrity-protected
-with a device-bound TrustZone key: a client stores and returns ciphertext and
-cannot read it. They are portable between operating systems on the *same*
-device, and useless anywhere else.
+The trusted application
+([`gfenu`](02-ta-protocol.md#the-application)) persists everything through
+[the listener services](03-listener-services.md), as sealed objects.
+
+The payloads are encrypted and integrity-protected with a device-bound
+TrustZone key. A client stores and returns ciphertext and cannot read it. The
+objects are portable between operating systems on the *same* device, and they
+are useless anywhere else.
 
 ## Object format
 
@@ -13,18 +15,22 @@ Every object satisfies:
 
     file_size == first_u32 + 0x34
 
-A four-byte payload length inside a 52-byte wrapper. The application checks this
-on the way in — `fts_open()` reads exactly four bytes from offset 0, refuses the
-object if it gets anything other than four bytes back, and rejects it if
-`length + 0x34` exceeds `0x4b000` (`GF_FTS_TEMPLATE_MAX_SIZE`, 307200).
+This is a four-byte payload length inside a 52-byte wrapper. The application
+checks the format on the way in:
 
-Two consequences for a client:
+- `fts_open()` reads exactly four bytes from offset 0.
+- It refuses the object if it gets anything other than four bytes back.
+- It rejects the object if `length + 0x34` exceeds `0x4b000`
+  (`GF_FTS_TEMPLATE_MAX_SIZE`, 307200).
 
-- **An empty file is worse than an absent one.** Absent takes the create path;
-  present-but-empty fails the four-byte header read and yields
-  `1033 GF_ERROR_OPEN_SECURE_OBJECT_FAILED`. Never pre-create placeholders.
+This has two consequences for a client:
+
+- **An empty file is worse than an absent one.** An absent file takes the
+  create path. A present-but-empty file fails the four-byte header read and
+  yields `1033 GF_ERROR_OPEN_SECURE_OBJECT_FAILED`. Never pre-create
+  placeholders.
 - **A read must return the full requested length.** A short or zero return
-  reads as failure.
+  counts as failure.
 
 Observed sizes, for scale:
 
@@ -39,10 +45,11 @@ Observed sizes, for scale:
 
 ## The file set
 
-Named by the application under `/data/vendor/fpdump/`. Those are the names it
-asks for, as absolute Android paths; the listener service passes them through as
-they are rather than resolving them against a root of its own, so a Linux client
-can put the whole set under one directory of its choosing — see
+The application names the objects under `/data/vendor/fpdump/`. Those are the
+names it asks for, as absolute Android paths. The listener service passes them
+through as they are; it does not resolve them against a root of its own.
+Because of this, a Linux client can put the whole set under one directory of
+its choosing — see
 [listener 28672](03-listener-services.md#listener-28672--globalplatform-file-system):
 
 | object | written | purpose |
@@ -56,23 +63,27 @@ can put the whole set under one directory of its choosing — see
 | `finger_<group>_<n>.so` | at save | template, slots 0–4 |
 | `finger_<group>_<n>_bak.so` | at save | backup copy. An object the application names and writes itself, not the `<name>.bak` produced by the listener protocol's backup flag |
 
-Plus `/persist/data/fingerprint_version`, which is written through the plain
-`open`/`write` path on listener 10 rather than as a sealed object — it is the
-one file that works without `gpfs`, which makes it a useful smoke test. It is
-also the only thing that ever gets written on listener 10: in a full
-authentication run, 3 writes there against 581 opens, all of them this file
-([[our device]](../README.md#how-we-know)). See [why there are two file services](03-listener-services.md#why-two-file-services).
+There is also `/persist/data/fingerprint_version`. It is written through the
+plain `open`/`write` path on listener 10 rather than as a sealed object. It is
+the one file that works without `gpfs`, which makes it a useful smoke test.
 
-Note there is no `auth_token.so`; only `auth_token_0.so`. The application probes
-both.
+It is also the only thing that ever gets written on listener 10: in a full
+authentication run there were 3 writes there against 581 opens, and all of
+them were this file ([[our device]](../README.md#how-we-know)). See
+[why there are two file services](03-listener-services.md#why-two-file-services).
+
+Note there is no `auth_token.so`; only `auth_token_0.so` exists. The
+application probes both.
 
 ## Calibration is generated
 
-We found no command that produces calibration, and none is needed: the
+We found no command that produces calibration, and none is needed. The
 application maintains its baseline during ordinary operation and persists it
-through this same path. The four baseline objects — OTP, calibration,
-navigation and finger-detect — appear during `INIT` on a device that
-has never had any, and `gf_calibration.so` is rewritten continuously during use
+through this same path.
+
+The four baseline objects are OTP, calibration, navigation and finger-detect.
+They appear during `INIT` on a device that has never had any, and
+`gf_calibration.so` is rewritten continuously during use
 ([[our device]](../README.md#how-we-know)).
 
 So there is nothing to import, and importing is harmful: a served copy of
@@ -91,9 +102,16 @@ Slots are allocated lowest-free-first, not by overwriting.
 
 ## Application index versus storage
 
-The storage filenames are not the application-level index. Ask the application
-with `ENUMERATE` (1015) after setting group context. Its 184-byte response has
-the count at `+100`, group ids at `+104`, and finger ids at `+144`, with ten
-slots in each array. On this device it returned group `0`, finger
-`0x1da3a0c6` ([[our device]](../README.md#how-we-know)). The full 184-byte
-payload is required; a SAVE-sized buffer truncates the finger-id array.
+The storage filenames are not the application-level index. To get the index,
+ask the application with `ENUMERATE` (1015) after setting group context.
+
+The 184-byte response contains:
+
+- the count at `+100`
+- group ids at `+104`
+- finger ids at `+144`
+
+Each array has ten slots. On this device the application returned group `0`,
+finger `0x1da3a0c6` ([[our device]](../README.md#how-we-know)). The full
+184-byte payload is required, because a SAVE-sized buffer truncates the
+finger-id array.

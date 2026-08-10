@@ -5,20 +5,31 @@ Everything in this document crosses the
 
 ## The application
 
-As established, a Goodix sensor can have its fingerprint implementation provided
-as an SoC trusted application (TEE mode), as opposed to being driven directly by
+A Goodix sensor can run its fingerprint implementation in one of two ways. It
+can be an SoC trusted application (TEE mode), or it can be driven directly by
 the operating system (REE mode).
 
 Of the [two known implementations](../README.md), this document describes
 Qualcomm's.
 
-`gfenu` is that application on the Xiaomi Pad 5 Pro 5G, which uses the Qualcomm
-SM8250 SoC and which this project was built against. It provides the whole
-biometric implementation: sensor configuration, image capture, template
-construction, matching and the sealing of stored data all happen inside it. The
-normal world never sees a fingerprint image or a template — it starts commands,
-answers [file-I/O requests](03-listener-services.md) on the application's
-behalf, and stores [sealed ciphertext](04-secure-storage.md) it cannot read.
+`gfenu` is that application on the Xiaomi Pad 5 Pro 5G. That device uses the
+Qualcomm SM8250 SoC, and this project was built against it.
+
+`gfenu` provides the whole biometric implementation. The following all happen
+inside it:
+
+- sensor configuration
+- image capture
+- template construction
+- matching
+- the sealing of stored data
+
+The normal world never sees a fingerprint image or a template. Instead it:
+
+- starts commands
+- answers [file-I/O requests](03-listener-services.md) on the application's
+  behalf
+- stores [sealed ciphertext](04-secure-storage.md) it cannot read
 
 Practical facts about it:
 
@@ -34,33 +45,40 @@ Practical facts about it:
   commands that exist in the protocol but are not compiled into this build.
 
 The name is not derivable. `gfenu` resembles Goodix's `gf` prefix followed by
-part of this device's codename, `enuma`, but that is a partial match and nothing
-in the image states a rule. Treat the name as something to be read from the
-device rather than constructed: the device tree carries it as `firmware-name`,
-and the sensor driver reports it at
-[`/sys/.../firmware_name`](00-sensor-driver.md#interfaces).
+part of this device's codename, `enuma`, but that is only a partial match, and
+nothing in the image states a rule.
 
-The name is the lesser half of the portability problem, though. The image used
-here was extracted from the stock operating system of the device it runs on, so
-it is a given for that model. Whether the same image would load on a different
-model, or on another manufacturer's device using the same sensor and SoC, is
-untested. The `.mdt` carries a hash segment and the secure world does reject an
-image that is not assembled exactly as expected, but that establishes integrity
-checking, not that an image is bound to one model or one vendor.
+So treat the name as something to be read from the device rather than
+constructed. Two places carry it:
 
-Nor do we know how it is signed, or by whom, or what that means for
-redistribution — [an open question](../README.md#what-is-not-understood), and the
-one that decides whether any of this can be packaged rather than extracted per
-device. Treat provenance as unresolved per model rather than assuming either
-way.
+- the device tree carries it as `firmware-name`
+- the sensor driver reports it at
+  [`/sys/.../firmware_name`](00-sensor-driver.md#interfaces)
+
+The name is only a small part of the portability problem. The image used here
+was extracted from the stock operating system of the device it runs on, so it
+is a given for that model. Whether the same image would load elsewhere is
+untested. That includes a different model, or another manufacturer's device
+using the same sensor and SoC.
+
+The `.mdt` carries a hash segment, and the secure world does reject an image
+that is not assembled exactly as expected. But that only establishes integrity
+checking. It does not establish that an image is bound to one model or one
+vendor.
+
+We also do not know how it is signed, or by whom, or what that means for
+redistribution. This is [an open question](../README.md#what-is-not-understood).
+It is the one that decides whether any of this can be packaged rather than
+extracted per device. So treat provenance as unresolved per model rather than
+assuming either way.
 
 Android supplies enrolment with an authentication token signed by the
 platform's Keymaster application. This document covers only the token boundary
-with `gfenu`; the signer and its wire protocol are documented separately in
+with `gfenu`. The signer and its wire protocol are documented separately in
 [the Gatekeeper protocol](06-Gatekeeper-protocol.md).
 
-What this document describes is the protocol such an application speaks, not the
-image itself.
+This document describes the protocol such an application speaks, not the image
+itself.
 
 ## Request header (128 bytes)
 
@@ -84,13 +102,13 @@ At buffer offset 128:
 | +128 | 4 | **status** — zero is `GF_SUCCESS` |
 | +132 | 4 | *unused in practice; never seen non-zero* ([[our device]](../README.md#how-we-know)) |
 
-The Android client ends its invoke wrapper with `ldr w19,[x24,#128]`, which is
+The Android client ends its invoke wrapper with `ldr w19,[x24,#128]`. That is
 where the status reading comes from ([[libdrmfs.so disassembly]](../README.md#how-we-know)).
 The request's token at +8 is not echoed into either word
 ([[our device]](../README.md#how-we-know)).
 
 Per-command data lives in the payload buffer. **Command bodies start at payload
-+100**; the first 100 bytes are an application header whose fields are mostly
++100**. The first 100 bytes are an application header whose fields are mostly
 undocumented here, though the interrupt verdict at +12 is one of them.
 
 ## Command classes
@@ -105,7 +123,7 @@ The class at request +12 selects a dispatch table:
 | 4 | image and template dump |
 
 Classes 1 and 3 share the command number space, so the same id means different
-things by class. This is a production build: it answers `UNKNOWN_CMD` (1070) to
+things by class. This is a production build. It answers `UNKNOWN_CMD` (1070) to
 every class-3 command that computes or commits a calibration.
 
 ## Commands used
@@ -132,7 +150,7 @@ every class-3 command that computes or commits a calibration.
 
 The table above lists what we have seen sent, with
 the numbers they were sent as. `GF_CMD_LOCKOUT` is named in the image
-([[gfenu symbols]](../README.md#how-we-know)) but we never saw it sent, so no
+([[gfenu symbols]](../README.md#how-we-know)), but we never saw it sent, so no
 number is recorded for it.
 
 ## Bring-up
@@ -151,7 +169,7 @@ its calibration objects.
 
 ## Interrupts
 
-The [sensor driver](00-sensor-driver.md) signals over netlink; the client
+The [sensor driver](00-sensor-driver.md) signals over netlink. The client
 then pumps `IRQ` (1016)
 until the mask comes back zero. **The handler drains one interrupt across
 several 1016 calls, reusing the buffer without clearing it — do not `memset`
@@ -177,16 +195,21 @@ Response fields, as byte offsets into the payload buffer:
 | 327400 | finger id | enrolment and successful authentication |
 | 327404 | samples remaining | enrolment |
 
-The interrupt bits: `0x2` FINGER_DOWN, `0x4` FINGER_UP, `0x80` IMAGE,
-`0x400` ONE_FRAME_DONE.
+The interrupt bits are:
 
-On an image interrupt, the command return status is the per-sample result and
+- `0x2` FINGER_DOWN
+- `0x4` FINGER_UP
+- `0x80` IMAGE
+- `0x400` ONE_FRAME_DONE
+
+On an image interrupt, the command return status is the per-sample result, and
 the application mirrors it at payload `+12`. Qualcomm's `libgf_hal.so` consumes
 the return status and maps selected non-zero Goodix values to Android
-acquired-info notifications, including partial (`1`), imager dirty (`3`), too
-slow (`4`), and vendor-defined values. A client should retain a non-zero `IRQ`
-status as sample feedback rather than treating every non-zero result as a fatal
-failure.
+acquired-info notifications. These include partial (`1`), imager dirty (`3`),
+too slow (`4`), and vendor-defined values.
+
+A client should retain a non-zero `IRQ` status as sample feedback rather than
+treating every non-zero result as a fatal failure.
 
 The concrete mappings in this Qualcomm HAL are:
 
@@ -199,25 +222,26 @@ The concrete mappings in this Qualcomm HAL are:
 | 1013 `GF_ERROR_DUPLICATE_FINGER` | vendor `1026` (duplicate finger) |
 | 1094 `GF_ERROR_TOO_FAST` | vendor `1029` (too fast) |
 
-The names above are not guesses from their ordering: the status values resolve
+The names above are not guesses from their ordering. The status values resolve
 to those strings through `libgf_hal.so`'s exported `err_table`, and the IRQ
-handler maps them to the indicated acquired-info values. The same handler also
-emits vendor `1028` directly on a finger-up flag rather than in response to a TA
-status. This is Goodix's `INPUT_TOO_LONG` acquired event: an older public Goodix
-interface assigns that name to the corresponding event immediately before
-duplicate-area and duplicate-finger, and the control flow here has the same
-finger-up semantics.
+handler maps them to the indicated acquired-info values.
+
+The same handler also emits vendor `1028` directly on a finger-up flag rather
+than in response to a TA status. This is Goodix's `INPUT_TOO_LONG` acquired
+event. An older public Goodix interface assigns that name to the corresponding
+event immediately before duplicate-area and duplicate-finger, and the control
+flow here has the same finger-up semantics.
 
 There is no production acquired-info mapping for vendor `1027` in this HAL.
 The sole literal `1027` is passed to the test-command dispatcher, not
-`gf_hal_notify_acquired_info`; leave it unnamed unless another paired HAL is
+`gf_hal_notify_acquired_info`. So leave it unnamed unless another paired HAL is
 found to use it.
 
-These are HAL policy, not a claim that every Goodix generation assigns the
-same meaning to every numeric TA status. A native client can expose the raw
+These are HAL policy. They are not a claim that every Goodix generation assigns
+the same meaning to every numeric TA status. A native client can expose the raw
 status and apply the mappings appropriate to its paired TA/HAL generation.
 
-A live enrolment confirmed the path: a partial press returned `1011`, placed
+A live enrolment confirmed the path. A partial press returned `1011`, placed
 the same `1011` at payload `+12`, and left samples remaining unchanged at 25.
 The Qualcomm HAL maps `1011` to acquired-info partial (`1`). An accepted press
 returned zero and decremented samples remaining.
@@ -247,18 +271,22 @@ part of the command ABI.
     SET_ACTIVE_GROUP (1014)
     GET_AUTH_ID      (1011)
 
-Each interrupt carrying a frame updates three fields in the payload: the group
-the finger is being enrolled into, the id the application has assigned it, and
-how many further samples it still wants. The id is zero until the application
-has enough of a template to commit to one, so it appears partway through a run
-rather than at the start.
+Each interrupt carrying a frame updates three fields in the payload:
+
+- the group the finger is being enrolled into
+- the id the application has assigned it
+- how many further samples it still wants
+
+The id is zero until the application has enough of a template to commit to one,
+so it appears partway through a run rather than at the start.
 
 Enrolment is complete when **samples remaining reaches zero and the finger id is
-non-zero**. Both conditions are needed. Samples remaining also reaches zero when
-the application abandons an enrolment — a run of frames it cannot use, for
-instance — and in that case the finger id stays zero and there is nothing to
-save. Treating `remaining == 0` alone as success means calling `SAVE` with no
-template behind it.
+non-zero**. Both conditions are needed.
+
+Samples remaining also reaches zero when the application abandons an enrolment —
+a run of frames it cannot use, for instance. In that case the finger id stays
+zero and there is nothing to save. So treating `remaining == 0` alone as success
+means calling `SAVE` with no template behind it.
 
 `SAVE`'s payload carries the group at +100 and the finger id at +104 — the
 same two slots `REMOVE` uses. **Do not
@@ -266,11 +294,12 @@ send `POST_ENROLL` before `SAVE`**: it ends the enrolment session, leaving
 nothing to persist.
 
 Enrolling a finger that is already enrolled succeeded every time we tried it
-([[our device]](../README.md#how-we-know)). The application is not indifferent to
-the case, though: `GF_ERROR_DUPLICATE_FINGER` and `GF_ERROR_DUPLICATE_AREA` are
-both defined in the image ([[gfenu symbols]](../README.md#how-we-know)). We never
-saw either raised, so do not rely on duplicates being rejected — but equally, do
-not assume they never will be.
+([[our device]](../README.md#how-we-know)). But the application is not
+indifferent to the case. `GF_ERROR_DUPLICATE_FINGER` and
+`GF_ERROR_DUPLICATE_AREA` are both defined in the image
+([[gfenu symbols]](../README.md#how-we-know)). We never saw either raised, so do
+not rely on duplicates being rejected — but equally, do not assume they never
+will be.
 
 ## Authentication
 
@@ -284,7 +313,7 @@ Both `SET_ACTIVE_GROUP` and `AUTHENTICATE` take the group id at payload +100.
 `SET_ACTIVE_GROUP`.
 
 **For authentication, the image result at interrupt payload +12 is the
-verdict:** zero is a match,
+verdict:** zero is a match, and
 `1064 GF_ERROR_MATCH_FAIL_AND_RETRY` is not. It does not say *which* finger
 matched.
 
@@ -307,7 +336,7 @@ with the matched group and finger copied from the IRQ payload
 ordinary mismatch ([[vendor trace]](../README.md#how-we-know)).
 
 **`AUTHENTICATE` is one-shot.** An armed attempt ends with
-`AUTHENTICATE_FINISH` on a match or `CANCEL` when the system gives up, and a
+`AUTHENTICATE_FINISH` on a match, or with `CANCEL` when the system gives up. A
 fresh `AUTHENTICATE` is required for the next attempt. Further presses after a
 verdict raise no frames at all. When to arm is the driver's policy — see
 [arm on demand](05-writing-a-client.md#things-that-will-bite).
@@ -348,7 +377,7 @@ that does not equal the length requested. `1033` is an open failure. The
 distinction is useful: `1035` means the write was attempted.
 
 Those are the codes we have actually seen. The image defines 116
-([[gfenu symbols]](../README.md#how-we-know)), and one group of them is worth
+([[gfenu symbols]](../README.md#how-we-know)). One group of them is worth
 knowing about even unobserved, because it is the vocabulary the application has
 for rejecting a sample:
 
@@ -362,10 +391,11 @@ for rejecting a sample:
 These names do not all have values assigned here, but the transport is known:
 the return status of each `IRQ` invocation carries the sample result. Qualcomm's
 `libgf_hal.so` dispatches that status through its acquired-info mapping before
-continuing the IRQ drain. An enrolment frame that is rejected also does not
-decrement the samples-remaining count — in one run, 138
-finger-down/up events produced 10 accepted samples
-([[our device]](../README.md#how-we-know)).
+continuing the IRQ drain.
+
+An enrolment frame that is rejected also does not decrement the
+samples-remaining count. In one run, 138 finger-down/up events produced 10
+accepted samples ([[our device]](../README.md#how-we-know)).
 
 ## The authentication token
 
@@ -389,7 +419,7 @@ signing flow.
 
 The reference client in [`harness/`](../harness/) repeatedly succeeded with
 only the fresh challenge populated and all signature fields zero. This was
-tested both before and after provisioning an Android lock-screen credential;
+tested both before and after provisioning an Android lock-screen credential, and
 provisioning Gatekeeper did not change `gfenu`'s behaviour. Whether another
 model or firmware accepts the same shortcut remains unknown. **Do not rely on
 this** — see [what a client author should
