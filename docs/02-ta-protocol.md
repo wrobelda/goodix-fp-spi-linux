@@ -411,7 +411,7 @@ ordinary mismatch ([[vendor trace]](../README.md#how-we-know)).
 `AUTHENTICATE_FINISH` on a match, or with `CANCEL` when the system gives up. A
 fresh `AUTHENTICATE` is required for the next attempt. Further presses after a
 verdict raise no frames at all. When to arm is the driver's policy — see
-[arm on demand](05-writing-a-client.md#things-that-will-bite).
+[arm on demand](05-writing-a-client.md#things-that-may-bite).
 
 ## Removal
 
@@ -500,4 +500,4 @@ tested both before and after provisioning an Android lock-screen credential, and
 provisioning Gatekeeper did not change `gfenu`'s behaviour. Whether another
 model or firmware accepts the same shortcut remains unknown. **Do not rely on
 this** — see [what a client author should
-know](05-writing-a-client.md#things-that-will-bite).
+know](05-writing-a-client.md#things-that-may-bite).
