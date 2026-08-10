@@ -24,7 +24,8 @@ inside it:
 - matching
 - the sealing of stored data
 
-The normal world never sees a fingerprint image or a template. Instead it:
+The normal biometric path does not return a fingerprint image or template.
+Instead it:
 
 - starts commands
 - answers [file-I/O requests](03-listener-services.md) on the application's
@@ -100,7 +101,7 @@ At buffer offset 128:
 | off | size | field |
 |---|---|---|
 | +128 | 4 | **status** — zero is `GF_SUCCESS` |
-| +132 | 4 | *unused in practice; never seen non-zero* ([[our device]](../README.md#how-we-know)) |
+| +132 | 4 | **TA exception flag** — `libgf_ca.so` returns `GF_ERROR_TA_DEAD` (1049) instead of the status when this is non-zero ([[vendor client disassembly]](../README.md#how-we-know)) |
 
 The Android client ends its invoke wrapper with `ldr w19,[x24,#128]`. That is
 where the status reading comes from ([[libdrmfs.so disassembly]](../README.md#how-we-know)).
@@ -122,9 +123,57 @@ The class at request +12 selects a dispatch table:
 | 3 | factory test |
 | 4 | image and template dump |
 
-Classes 1 and 3 share the command number space, so the same id means different
-things by class. This is a production build. It answers `UNKNOWN_CMD` (1070) to
-every class-3 command that computes or commits a calibration.
+The command class is part of the operation identity. Sending a factory-test or
+dump id through class 1 selects the wrong dispatch table and returns
+`UNKNOWN_CMD` (1070).
+
+### Vendor client library map
+
+The Android stack separates TEE communication from fingerprint policy.
+`libgf_ca.so` is the client application (CA) shim that alone calls QSEECom;
+the HAL above it selects a command class and command id without handling the
+TEE transport itself ([[vendor client disassembly]](../README.md#how-we-know)).
+
+The exported CA interface is:
+
+```
+gf_ca_open_session()        gf_ca_close_session()
+gf_ca_invoke_command()      gf_ca_set_handle()
+gf_ca_tee_auth()            get_key_from_keymaster()
+gf_sec_ion_init/malloc/free/destroy()
+gf_ca_get_logbuf_length()   gf_ca_logdump()
+```
+
+`gf_ca_invoke_command(class, id, buffer, length)` copies the in/out payload
+through an ION allocation and uses `QSEECom_send_modified_cmd`. The paired HAL
+has four caller groups:
+
+| class | HAL entry points | purpose |
+|---|---|---|
+| 1 | `gf_hal_invoke_command`, `gf_hal_open`, `gf_hal_reinit` | normal fingerprint commands |
+| 2 | `gf_hal_common_user_invoke_command` | CA-level commands and Xiaomi MiFxTunnel passthrough |
+| 3 | `gf_hal_test_invoke_command`, `gf_hal_test_invoke_command_ex` | factory tests |
+| 4 | `gf_hal_common_dump_invoke_command` | image and template dump requests |
+
+`libgoodixhwfingerprint.so` provides the Xiaomi MiFxTunnel HIDL wrapper. Its
+`GoodixFingerprintDaemon::invokeCommand()` passes a caller-supplied opcode to
+class 2. This is a useful injection point when testing the stock operating
+system, but it is not part of the Linux client architecture.
+
+The exact locations used to recover this map are:
+
+| item | vendor binary location |
+|---|---|
+| `gf_ca_invoke_command` | `libgf_ca.so` virtual address `0x23a4` |
+| `gf_ca_open_session` | `libgf_ca.so` virtual address `0x2018` |
+| `gf_ca_tee_auth`, log-buffer length, log dump | `libgf_ca.so` virtual addresses `0x3044`, `0x304c`, `0x3054` |
+| `gf_hal_open`, `gf_hal_reinit` | `libgf_hal.so` virtual addresses `0x1a108`, `0x1c398` |
+| command, error, chip, and operation tables | `libgf_hal.so` virtual addresses `0x4d088`, `0x4dc08`, `0x4e3f8`, `0x4d6e8` |
+| IRQ-name decoder | `libgf_hal.so` virtual address `0x47884` |
+
+The libraries came from the reference platform's LineageOS vendor tree:
+`proprietary/vendor/lib64/{libgf_ca.so,libgf_hal.so,libgoodixhwfingerprint.so}`
+and `proprietary/vendor/lib64/hw/fingerprint.goodix.default.so`.
 
 ## Commands used
 
@@ -153,6 +202,23 @@ the numbers they were sent as. `GF_CMD_LOCKOUT` is named in the image
 ([[gfenu symbols]](../README.md#how-we-know)), but we never saw it sent, so no
 number is recorded for it.
 
+## Diagnostic command classes
+
+`DUMP_TEMPLATE` (1079), `DUMP_DATA` (1080), and `DUMP_ORIGIN_DATA` (1081)
+belong to command class 4, while factory-test commands belong to class 3.
+Sending these ids through class 1 returns `GF_ERROR_UNKNOWN_CMD`, because
+class 1 selects the normal biometric dispatch table.
+
+Live probes through the correct classes confirm that both diagnostic tables
+exist ([[our device]](../README.md#how-we-know)). In particular, class 4
+recognises `DUMP_TEMPLATE`, while the class-3 sequence
+`TEST_DATA_NOISE_BASE` (1097) followed by `TEST_POLLING_IMAGE` (1098) returns
+a 36 × 160 frame of 16-bit sensor samples at payload `+100`.
+
+These are vendor diagnostic interfaces, separate from the normal biometric
+command path. Enrolment and authentication exchange events, quality results,
+progress, and match identifiers rather than images or templates.
+
 ## Bring-up
 
 With the [file service](03-listener-services.md) already running and the
@@ -166,6 +232,12 @@ powered:
 
 `INIT` is where the trusted application (`gfenu`) reads — and, on a device that has none, writes —
 its calibration objects.
+
+With the sensor held in reset, `DETECT_SENSOR` returns 1062
+`GF_ERROR_SENSOR_NOT_AVAILABLE`. Powering the sensor and releasing reset turns
+the same request into `GF_SUCCESS`, so this status distinguishes unavailable
+hardware from `GF_ERROR_BAD_PARAMS` (1003) and `GF_ERROR_UNKNOWN_CMD` (1070)
+([[our device]](../README.md#how-we-know)).
 
 ## Interrupts
 
@@ -367,7 +439,9 @@ enrolment in the same session.
 | 1033 | `GF_ERROR_OPEN_SECURE_OBJECT_FAILED` |
 | 1035 | `GF_ERROR_WRITE_SECURE_OBJECT_FAILED` |
 | 1047 | `GF_ERROR_FINGER_NOT_EXIST` |
+| 1049 | `GF_ERROR_TA_DEAD` |
 | 1057 | `GF_ERROR_UNTRUSTED_ENROLL` |
+| 1062 | `GF_ERROR_SENSOR_NOT_AVAILABLE` |
 | 1064 | `GF_ERROR_MATCH_FAIL_AND_RETRY` |
 | 1070 | `GF_ERROR_UNKNOWN_CMD` |
 | 1088 | `GF_ERROR_NO_GROUP_ID` |
@@ -376,7 +450,10 @@ enrolment in the same session.
 that does not equal the length requested. `1033` is an open failure. The
 distinction is useful: `1035` means the write was attempted.
 
-Those are the codes we have actually seen. The image defines 116
+Most codes above were observed as command results. `GF_ERROR_TA_DEAD` is
+defined by the response wrapper: a non-zero exception flag at response +132
+causes `libgf_ca.so` to return 1049 and the HAL reopens the session
+([[vendor client disassembly]](../README.md#how-we-know)). The image defines 116
 ([[gfenu symbols]](../README.md#how-we-know)). One group of them is worth
 knowing about even unobserved, because it is the vocabulary the application has
 for rejecting a sample:

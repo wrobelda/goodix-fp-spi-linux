@@ -195,12 +195,12 @@ service that needs it, and label it in LSM policy rather than inheriting a
 permissive default. See
 [what the kernel driver can and cannot enforce](01-kernel-tee-driver.md#security).
 
-**Templates are not exposed by any command we found.** The unexplored
-`DUMP_TEMPLATE` could change this answer — see
-[the sealed file set](04-secure-storage.md#the-file-set). On everything we
-did exercise, libfprint's model of a print as data the host holds does not
-apply: the host holds sealed ciphertext keyed to the device. Enrolled prints
-cannot be migrated, backed up meaningfully, or matched anywhere else.
+**Do not use the diagnostic command classes in the production client.**
+`DUMP_TEMPLATE` belongs to class 4, not the normal class 1 path; factory-test
+commands similarly use class 3. These interfaces are separate from the
+match-on-chip enrolment and authentication flow, so libfprint does not call or
+decode them. See [diagnostic command
+classes](02-ta-protocol.md#diagnostic-command-classes).
 
 ## The authentication token
 

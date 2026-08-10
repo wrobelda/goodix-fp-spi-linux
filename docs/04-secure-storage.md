@@ -75,6 +75,28 @@ them were this file ([[our device]](../README.md#how-we-know)). See
 Note there is no `auth_token.so`; only `auth_token_0.so` exists. The
 application probes both.
 
+## Neighbouring paths in the stock operating system
+
+The paths above are the complete file set observed for this Goodix TA. The
+stock operating system also contains nearby paths which belong to other
+trusted applications or to the Android HAL, so they must not be treated as
+additional `gfenu` template objects:
+
+| path | observed role |
+|---|---|
+| `/persist/data/mfido/` | three files in a directory named for the FIDO service ([[our device]](../README.md#how-we-know)) |
+| `/persist/data/Mlipay/` | one file in a directory named for Mlipay ([[our device]](../README.md#how-we-know)) |
+| `/persist/goodix` | an empty directory on the reference platform ([[our device]](../README.md#how-we-know)) |
+| `/data/gf_data/` | an auxiliary path named by `libgf_hal.so`, not a sealed-object path used for the templates documented here ([[vendor client disassembly]](../README.md#how-we-know)) |
+
+The stock `/persist/data` tree also contains obfuscated directory names with a
+`vTable`, data files, and a `.bak` for each file. These are QSEE Secure File
+System objects belonging to other trusted applications. A read-only inspection
+of the reference platform's stock `persist` partition confirmed these paths
+and backup pairs. They show that the same listener-backed store serves several
+TAs, but they do not extend the Goodix file set or its namespace
+([[our device]](../README.md#how-we-know)).
+
 ## Calibration is generated
 
 We found no command that produces calibration, and none is needed. The
