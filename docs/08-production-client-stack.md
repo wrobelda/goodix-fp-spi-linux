@@ -1,8 +1,11 @@
 # Production Linux client stack
 
-This document describes the production userspace implementation. The
-[reference test client](07-reference-client.md) is a separate command-line
-hardware test program and is not used by either production component.
+This document describes the production implementation of the client
+responsibilities also demonstrated by the
+[proof-of-concept client](07-reference-client.md). The proof-of-concept client
+combines those responsibilities in one command-line hardware and protocol test
+program. The production stack divides them between system services and a
+libfprint driver; it does not link to or execute the proof-of-concept client.
 
 The production sources are maintained separately:
 

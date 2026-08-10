@@ -1,9 +1,11 @@
-# Reference test client
+# Proof-of-concept client
 
-`harness/gfharness.c` is a command-line implementation of the documented
-sensor and trusted-application protocols. It is used for protocol testing,
-hardware diagnostics, and comparison with vendor traces. Production services
-do not link to or execute it. See the
+`harness/gfharness.c` implements the complete sensor and trusted-application
+client flow in one command-line program. It is used for protocol testing,
+hardware diagnostics, and comparison with vendor traces. The production stack
+implements the same responsibilities in separate system services and a
+libfprint driver; it does not link to or execute the proof-of-concept client.
+See the
 [client design investigation](05-writing-a-client.md) and
 [production client stack](08-production-client-stack.md) for the libfprint
 driver and machine-wide supplicant.
