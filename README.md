@@ -321,7 +321,7 @@ power, reset and interrupt that the secure world leaves to the normal world.
 
 ## How we know
 
-Claims in these documents come from six different places and, where relevant, they may be denoted by a tag:
+Claims in these documents come from seven different places and, where relevant, they may be denoted by a tag:
 
 | tag | source | what would overturn it |
 |---|---|---|
@@ -331,8 +331,9 @@ Claims in these documents come from six different places and, where relevant, th
 | `([vendor client disassembly])` | read from the code, data tables, and exported symbols in this platform's `libgf_ca.so`, `libgf_hal.so`, and `libgoodixhwfingerprint.so` | misreading a binary; a different build of the client libraries |
 | `([gfenu symbols])` | symbol names in the trusted application image | names that do not mean what they suggest |
 | `([Qualcomm minkipc])` | Qualcomm's QTEE listener protocol headers and service implementations in [`qualcomm/minkipc`](https://github.com/qualcomm/minkipc/tree/main/listeners) | a device carrying a modified Qualcomm listener ABI |
+| `([downstream qseecom])` | Qualcomm's Android kernel driver, `drivers/misc/qseecom.c`, as shipped in [LineageOS's SM8250 kernel](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/lineage-22.2/drivers/misc/qseecom.c) | a different downstream branch, or firmware that departs from it |
 
-Only the six labels in that table are tags, and each tag in the text links
+Only the seven labels in that table are tags, and each tag in the text links
 back here. Square brackets elsewhere — for instance `"[gf_fts]"` — are
 literal strings quoted from a binary, not provenance.
 
@@ -396,7 +397,7 @@ from tagged ones. Keep two conventions when editing:
 | term | meaning |
 |---|---|
 | **sensor driver** | the [kernel driver owning the sensor's supply, reset line and interrupt](docs/00-sensor-driver.md). In TEE mode that is all it does, the trusted application doing the biometrics |
-| **MDT image** | Qualcomm firmware format: one ELF-shaped image split across files. `.mdt` holds the ELF header, program-header table and authentication hash; each `.bNN` holds the payload of program header `NN`. See [the image format](docs/01-kernel-tee-driver.md#what-the-files-are) |
+| **Qualcomm firmware image** | a signed ELF image, shipped in either of two equivalent forms:<br>• **split** — an `.mdt` file holding the ELF header, the program-header table and the authentication hash, plus one `.bNN` file per program header `NN`, holding that segment's payload;<br>• **whole** — a single `.mbn` file.<br>See [the image format](docs/01-kernel-tee-driver.md#what-the-program-files-are) |
 | **HAL** | hardware abstraction layer, the Android userspace library a vendor ships to drive a device. The one this project replaces is Goodix's fingerprint HAL |
 | **`fprintd` / `libfprint`** | the Linux userspace fingerprint stack used by the implemented Goodix QSEE driver |
 

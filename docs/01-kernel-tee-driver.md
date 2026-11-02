@@ -105,10 +105,22 @@ The SCM layer already knew how to look up a loaded application and send it a
 command. That is all an in-kernel client such as `uefisecapp` needs. Two
 things were missing before an application could be driven at all.
 
-**Loading.** `qcom_scm_qseecom_app_load()` hands TZ an MDT-described image at
+**Loading.** `qcom_scm_qseecom_app_load()` hands TZ an application image at
 a physically contiguous, suitably aligned address and gets back the
-application id. TZ keeps the name it was loaded under; a later lookup matches
-on that name.
+application id. The image is in [either of its two forms](#what-the-program-files-are):
+an assembled split image, passed with its `.mdt` length, or a whole image,
+passed with an `.mdt` length of zero. TZ keeps the name it was loaded under; a
+later lookup matches on that name.
+
+**Addressing.** The width of the field carrying the address of an application
+image or a listener shared buffer depends on the QSEE version
+([[downstream qseecom]](../README.md#how-we-know)):
+
+- older than TZ.BF.4.0 (version `0x1000000`): a 32-bit field;
+- TZ.BF.4.0 and newer: a 64-bit field.
+
+On the older firmware, `qcom_scm_qseecom_init()` limits the SCM device's
+coherent DMA mask to 32 bits, so all TZ memory is allocated below 4 GiB.
 
 **Listener services.** An application asks the normal world to do work on its
 behalf — [file I/O](03-listener-services.md) above all — by raising a listener
@@ -218,10 +230,11 @@ alter them while TrustZone (TZ from here on) is looking at them.
     TEE_IOC_OPEN_SESSION  (privileged device)  →  qcom_scm_qseecom_app_load()
 
 The session carries one parameter: a MEMREF holding the application name. The
-image is not passed in. The driver fetches `<name>.mdt` and its `.bNN`
-segments with `request_firmware()`, so the files have to be under the kernel's
-firmware search path (`/lib/firmware`). Userspace picks *which* application,
-never *what is in it*.
+image is not directly passed in, the driver fetches it with `request_firmware()`, in
+whichever of its [two forms](#what-the-program-files-are) is present: `<name>.mdt`
+with its `.bNN` segments, or a single `<name>.mbn`. The files have to be under the
+kernel's firmware search path (`/lib/firmware`). Userspace picks *which*
+application, never *what is in it*.
 
 That rule is taken from `amdtee`, which does the same thing in
 `copy_ta_binary()`: userspace names a TA, the kernel fetches the image with
@@ -229,48 +242,81 @@ That rule is taken from `amdtee`, which does the same thing in
 the assembled image as a parameter instead would let any process allowed to
 open the device choose what runs at a higher privilege level than the kernel.
 
-### What the files are
+### What the program files are
 
-An MDT image is one ELF-shaped image split across several files. This is how
-Qualcomm's tooling ships firmware.
+A Qualcomm firmware image is a signed ELF image, shipped in one of two
+forms:
 
-**Program headers, briefly.** Nothing about this image involves Linux:
-Qualcomm's tooling produces it, the secure world consumes it, and Linux only
-relays the bytes. What matters here is the program-header table. Each entry
-covers one **segment** and gives:
+- **split** across several files, `<name>.mdt` and its `<name>.bNN` segments;
+- **whole**, as a single `<name>.mbn` file.
 
-- where its bytes are in the file (`p_offset`);
-- how many there are (`p_filesz`);
-- where they load (`p_paddr`, `p_vaddr`);
-- how much room they need once loaded (`p_memsz`, which can exceed `p_filesz`
-  for zero-filled data);
-- what kind of segment it is (`p_flags`).
+If for whatever reason both forms of a suitable application are present,
+the driver loads the split one.
 
-Qualcomm puts extra bits in `p_flags` to mark its own segment types; this is
-how the authentication hash is told apart from ordinary payload.
+#### Program headers, briefly
+
+Nothing about the program's ELF is specific to operating system — it's a 
+Qualcomm's own format, which the secure world consumes, while the OS
+merely relays the bytes read from the file system. 
+
+Like any ELF file, the image begins with an ELF header and a program-header
+table. The image is 32-bit ELF, which fixes the sizes below:
+
+| file offset | size | structure | contents |
+|---|---|---|---|
+| 0 | 52 | **ELF header** | identifies the file and locates the program-header table; see the first table below |
+| 52 | 32 × `e_phnum` | **program-header table** | one entry per **segment**; see the second table below |
+| after the table | varies | **segments** | the payloads the entries describe, including Qualcomm's authentication hash |
+
+**ELF header** (`Elf32_Ehdr`, 52 bytes):
+
+| offset | size | field | meaning |
+|---|---|---|---|
+| 0 | 16 | `e_ident` | magic `0x7F 'E' 'L' 'F'`, then class (1 = 32-bit), byte order, ELF version, OS ABI and padding |
+| 16 | 2 | `e_type` | file type |
+| 18 | 2 | `e_machine` | target architecture |
+| 20 | 4 | `e_version` | ELF version |
+| 24 | 4 | `e_entry` | entry-point address |
+| 28 | 4 | `e_phoff` | file offset of the program-header table; 52 here |
+| 32 | 4 | `e_shoff` | file offset of the section-header table, if any |
+| 36 | 4 | `e_flags` | architecture-specific flags |
+| 40 | 2 | `e_ehsize` | size of this header; 52 |
+| 42 | 2 | `e_phentsize` | size of one program-header entry; 32 |
+| 44 | 2 | `e_phnum` | number of program-header entries |
+| 46 | 2 | `e_shentsize` | size of one section-header entry |
+| 48 | 2 | `e_shnum` | number of section-header entries |
+| 50 | 2 | `e_shstrndx` | index of the section-name string table |
+
+**Program-header entry** (`Elf32_Phdr`, 32 bytes, one per segment):
+
+| offset | size | field | meaning |
+|---|---|---|---|
+| 0 | 4 | `p_type` | what the entry describes; `PT_LOAD` for a segment that goes into memory |
+| 4 | 4 | `p_offset` | where the segment's bytes start in the file |
+| 8 | 4 | `p_vaddr` | the virtual address the segment loads at |
+| 12 | 4 | `p_paddr` | the physical address the segment loads at |
+| 16 | 4 | `p_filesz` | how many bytes the segment has in the file |
+| 20 | 4 | `p_memsz` | how much room the segment needs once loaded; more than `p_filesz` when the rest is zero-filled |
+| 24 | 4 | `p_flags` | read, write and execute permissions, plus Qualcomm's own bits marking its segment types; this is how the authentication hash is told apart from ordinary payload |
+| 28 | 4 | `p_align` | the alignment the segment requires in memory |
 
 "Program-header order" in this document means the order those entries appear
-in the table, index 0 upward. The `.bNN` numbering follows the same order, so
-segment 3 is always `.b03`.
+in the table, index 0 upward.
 
+#### The split form
+
+As mentioned, the program file may be delivered in a split form, in which:
 - **`<name>.mdt`** is the metadata: a 32-bit ELF header and its program-header
   table, followed by the hash segment used to authenticate the image. It is
   small.
 - **`<name>.bNN`** is one file per program header, `NN` being that header's
-  index in decimal from `00` upward. Each holds exactly that segment's
-  payload, `p_filesz` bytes of it.
+  index in decimal from `00` upward, so segment 3 is always `.b03`. Each
+  holds exactly that segment's payload, `p_filesz` bytes of it.
 
 Splitting it this way lets a loader fetch the metadata, authenticate the image
 and size its allocation before pulling in megabytes of payload.
 
-Taking `gfenu` as the worked example: the `.mdt` is 7260 bytes and there are
-eight segments, `.b00` to `.b07`. The ELF header is 52 bytes and the eight
-program headers are 32 bytes each; that totals 308, which is exactly segment
-0's `p_filesz`. The `.mdt` is therefore segment 0 followed by segment 1 (the
-6952-byte hash), and `.b00` and `.b01` duplicate those two. Every `.bNN`
-matches its `p_filesz` exactly. Assembled, the image is 4993345 bytes.
-
-### How they are assembled
+##### Assembling split files
 
 The driver assembles the pieces into one contiguous, 4 MiB-aligned buffer of
 TZ memory: the `.mdt` first, then each segment payload in program-header
@@ -279,14 +325,26 @@ two segments the `.mdt` already contains. The duplication is not an accident
 to be optimised away; it is the layout the secure world authenticates.
 Dropping a segment shifts everything after it and gets the image rejected.
 
-The kernel already parses this format, for remote processors:
-`qcom_mdt_load()` in `drivers/soc/qcom/mdt_loader.c` reads an mdt and its
-segments and places each one at its `p_paddr` inside a carveout. That is the
-wrong shape here, because QSEE wants the image as a single contiguous buffer
-rather than scattered to physical addresses. So this driver uses
-`qcom_mdt_read_image()` from the same file, which assembles instead of
-placing. TZ remembers the name the application was loaded under; a later
-lookup matches on that name.
+> [!NOTE]
+> The kernel already parses this format, for remote processors:
+> `qcom_mdt_load()` in `drivers/soc/qcom/mdt_loader.c` reads an mdt and its
+> segments and places each one at its `p_paddr` inside a carveout. That is the
+> wrong shape here, because QSEE wants the image as a single contiguous buffer
+> rather than scattered to physical addresses. So this driver uses a new
+> `qcom_mdt_read_image()` alternative helper, which assembles instead of
+> placing.
+
+**Example: `gfenu`.** The ELF has eight program headers, so the application
+ships as `gfenu.mdt` and `gfenu.b00` to `gfenu.b07`. The `.mdt` is 7260
+bytes: the ELF header and program-header table (52 + 8 × 32 = 308 bytes),
+then the 6952-byte hash. Those are also segments 0 and 1, so `gfenu.b00` and
+`gfenu.b01` hold the same bytes again. Assembled, the image is 4993345 bytes.
+
+#### The whole form
+
+`<name>.mbn` is the same ELF in one file. It is handed to TZ exactly as it is stored,
+with an `.mdt` length of zero. The TZ reads the metadata from the image's own
+program headers.
 
 ### The application manager
 
@@ -297,7 +355,7 @@ service's own command number. This service has three commands ([[our device]](..
 
 | command | takes | returns | notes |
 |---|---|---|---|
-| 1 start | the assembled image, its `.mdt` length and total length | the id QSEE assigned | refuses an application that is already resident |
+| 1 start | the image, its `.mdt` length (zero for a whole image) and total length | the id QSEE assigned | refuses an application that is already resident |
 | 2 shutdown | an application id | the same id | what makes a resident application loadable again |
 | 3 lookup | a name | the id | resolves only applications the boot chain loaded |
 

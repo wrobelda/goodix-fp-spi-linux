@@ -39,7 +39,7 @@ Practical facts about it:
 - **Its image is `gfenu.mdt` plus `gfenu.b00`–`gfenu.b07`**, extracted from the
   device's stock operating system and placed in `/lib/firmware` for the kernel
   to find. See
-  [the image format and how it is loaded](01-kernel-tee-driver.md#what-the-files-are).
+  [the image format and how it is loaded](01-kernel-tee-driver.md#what-the-program-files-are).
 - **It identifies its hardware**, reporting chip id and firmware strings through
   `GET_DEV_INFO` (1089).
 - **It is a production build.** It answers `GF_ERROR_UNKNOWN_CMD` (1070) to
