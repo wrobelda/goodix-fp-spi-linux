@@ -143,23 +143,15 @@ separate repositories, so they can be packaged and reviewed independently.
     device
 
 - [x] **A machine-wide QSEECOM supplicant** — implemented in
-  [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant).
-  Its listener service
-  [belongs in one machine-wide process](docs/05-writing-a-client.md#supplicant-design-decision)
-  rather than inside the `fprintd` driver, because the kernel allows one
-  receiver per device (not per trusted app!); a second QSEE client handling
-  some other type of app could not register a handler of its own. Qualcomm's
-  [`minkipc`](https://github.com/qualcomm/minkipc) is the source-level
-  protocol and dispatch reference, while the local daemon supplies:
-  - the legacy QSEECOM transport,
-  - the confined state root,
-  - packaging,
-  - the reconnect lifecycle,
+  [`wrobelda/qsee-supplicant`](https://github.com/wrobelda/qsee-supplicant)
+  as a separate repository. It provides:
+  - the legacy QSEECOM `TEE_IOC_SUPPL_RECV`/`TEE_IOC_SUPPL_SEND` transport,
+  - the FS (listener 10) and GPFS (listener 28672) services,
+  - a confined state directory for the application's encrypted data,
+  - the `qsee-app-loader@.service` instance that loads a trusted application,
+  - the restart and re-registration lifecycle,
+  - systemd packaging,
   - hardware-free tests.
-
-  On the reference device it replaced `gfharness --supp`; the tested restart
-  and reconnect behaviour is listed in
-  [tests on the reference platform](docs/08-production-client-stack.md#tests-on-the-reference-platform).
 
 - [x] **A libfprint Goodix QSEE driver** — implemented on the
   [`goodix-qsee` branch](https://github.com/wrobelda/libfprint/tree/goodix-qsee)
@@ -327,48 +319,9 @@ That is why this is a protocol problem rather than a hardware-driver problem.
 A [small hardware driver](docs/00-sensor-driver.md) still exists; it owns the
 power, reset and interrupt that the secure world leaves to the normal world.
 
-## Scope
-
-Three things are stacked here, and they generalise differently:
-
-- **The QSEECOM transport and its listener services are Qualcomm-generic.**
-  Any device whose secure world is QSEE speaks this, whatever application is
-  running on top. The [kernel driver](docs/01-kernel-tee-driver.md) and
-  [listener service](docs/03-listener-services.md) documents should apply
-  unchanged.
-- **The recovered command set is a versioned Goodix compatibility profile.**
-  It is implemented for the positively matched reference platform. ABI
-  compatibility is not established by:
-  - similar Goodix hardware,
-  - another TA filename,
-  - another OEM,
-  - another TEE.
-
-  Those cases need a separate profile or driver until tested.
-- **What is per-model splits three ways, and each is configured somewhere
-  different.**
-  - *The sensor hardware* — regulator, reset line, interrupt — is described
-    in the device tree and driven by the
-    [companion char device](docs/00-sensor-driver.md). Board description
-    belongs there, and this is the only one of the three that is in DT.
-  - *The trusted application* ships with the device's stock operating system,
-    and it was extracted from that system. How far one image travels between
-    models, and whether it may be redistributed at all, is unresolved — see
-    [What is not understood](#what-is-not-understood).
-  - *The application name and its payload sizes* belong to the application
-    rather than the board. The client passes the name when opening a session,
-    and it has to know the payload layout. The kernel TEE driver is
-    application-agnostic and reads neither from the device tree.
-
-Everything here was established on one device, the
-[reference platform](#reference-platform), by the means set out in
-[How we know](#how-we-know). Treat the layer boundaries as the guide to what
-should port and what needs re-checking.
-
 ## How we know
 
-Claims in these documents come from six different places, and those places
-are not equally strong. Where it matters, a claim carries a tag:
+Claims in these documents come from six different places and, where relevant, they may be denoted by a tag:
 
 | tag | source | what would overturn it |
 |---|---|---|
